@@ -1,0 +1,13 @@
+﻿.\GriffinPlus.Lib.Logging.Interface.dll
+.\GriffinPlus.Lib.Logging.Interface.pdb
+.\GriffinPlus.Lib.Logging.Interface.Tests.dll
+.\GriffinPlus.Lib.Logging.Interface.Tests.pdb
+.\GriffinPlus.Lib.Logging.Interface.xml
+.\Microsoft.VisualStudio.CodeCoverage.Shim.dll
+.\xunit.abstractions.dll
+.\xunit.assert.dll
+.\xunit.core.dll
+.\xunit.execution.desktop.dll
+.\xunit.runner.reporters.net452.dll
+.\xunit.runner.utility.net452.dll
+.\xunit.runner.visualstudio.testadapter.dll

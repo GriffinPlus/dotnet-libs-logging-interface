@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+
+<package>
+	<metadata minClientVersion="3.3">
+		<id>GriffinPlus.Lib.Logging.Interface</id>
+		<version>$version$</version>
+		<authors>Sascha Falk</authors>
+		<copyright>Copyright (c) 2022 Sascha Falk and Contributors</copyright>
+		<requireLicenseAcceptance>false</requireLicenseAcceptance>
+		<description>The interface to the Griffin+ logging system. Libraries should use this package as it is very stable. Applications should use the GriffinPlus.Lib.Logging package which receives updates more often.</description>
+		<license type="expression">MIT</license>
+		<projectUrl>https://github.com/GriffinPlus/dotnet-libs-logging-interface</projectUrl>
+		<icon>images/nuget-icon.png</icon>
+		<tags>logging</tags>
+		<dependencies>
+			<group targetFramework="net461">
+			</group>
+			<group targetFramework="netstandard2.0">
+			</group>
+		</dependencies>
+	</metadata>
+	<files>
+		<file src="..\..\..\res\nuget-icon.png" target="images\" />
+		<file src="..\..\..\_build\.out\GriffinPlus.Lib.Logging.Interface\AnyCPU.Release\netstandard2.0\GriffinPlus.Lib.Logging.Interface.dll" target="lib\netstandard2.0" />
+		<file src="..\..\..\_build\.out\GriffinPlus.Lib.Logging.Interface\AnyCPU.Release\netstandard2.0\GriffinPlus.Lib.Logging.Interface.pdb" target="lib\netstandard2.0" />
+		<file src="..\..\..\_build\.out\GriffinPlus.Lib.Logging.Interface\AnyCPU.Release\netstandard2.0\GriffinPlus.Lib.Logging.Interface.xml" target="lib\netstandard2.0" />
+		<file src="..\..\..\_build\.out\GriffinPlus.Lib.Logging.Interface\AnyCPU.Release\net461\GriffinPlus.Lib.Logging.Interface.dll" target="lib\net461" />
+		<file src="..\..\..\_build\.out\GriffinPlus.Lib.Logging.Interface\AnyCPU.Release\net461\GriffinPlus.Lib.Logging.Interface.pdb" target="lib\net461" />
+		<file src="..\..\..\_build\.out\GriffinPlus.Lib.Logging.Interface\AnyCPU.Release\net461\GriffinPlus.Lib.Logging.Interface.xml" target="lib\net461" />
+	</files>
+</package>

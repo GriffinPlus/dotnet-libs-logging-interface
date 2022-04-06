@@ -1,0 +1,3 @@
+﻿.\GriffinPlus.Lib.Logging.Interface.dll
+.\GriffinPlus.Lib.Logging.Interface.pdb
+.\GriffinPlus.Lib.Logging.Interface.xml

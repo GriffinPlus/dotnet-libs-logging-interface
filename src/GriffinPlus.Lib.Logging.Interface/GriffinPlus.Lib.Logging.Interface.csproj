@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>net461; netstandard2.0</TargetFrameworks>
+		<AssemblyName>GriffinPlus.Lib.Logging.Interface</AssemblyName>
+		<RootNamespace>GriffinPlus.Lib.Logging</RootNamespace>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
+	</ItemGroup>
+
+</Project>
