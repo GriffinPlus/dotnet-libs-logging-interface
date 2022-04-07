@@ -147,6 +147,20 @@ public void Write<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14>(IFormatProv
 public void Write(IFormatProvider provider, LogLevel level, string format, params object[] args);
 ```
 
+### Helpers
+
+#### AsyncId
+
+The `AsyncId` class comes in handy when tracking asynchronous control flows using .NET's Task Parallel Library (TPL). Its `Current` property provides an integer value that remains constant all along the entire control flow starting from the point of its first invocation.
+
+#### GetTimestamp()
+
+The `GetTimestamp()` method of the `LogWriter` class returns an absolute timestamp (with timezone offset) as used by Griffin+ logging.
+
+#### GetHighPrecisionTimestamp()
+
+The `GetHighPrecisionTimestamp()` method of the `LogWriter` class returns a timestamp with nanosecond precision. The actual resolution of the timestamp depends on the system's clock, but on most modern systems the resolution is finer than one nanosecond. This timestamp can be used to measure timespans very accurately.
+
 ### Complete Example
 
 The following example shows how the *Griffin+ Logging Interface* can be used. For illustration purposes written log messages are printed to the console. When using the full-featured *Griffin+ Logging* this is not necessary as *Griffin+ Logging* provides a more powerful and modular *log message processing pipeline*. By default log messages associated with log level `Notice` or higher pass the filter in log writers. This filter can be configured using the static `LogWriter.UpdateLogWriters(...)` method. Same here, when using *Griffin+ Logging* this is not necessary as it ships with more powerful configuration mechanisms that take care of parameterizing log writers.
