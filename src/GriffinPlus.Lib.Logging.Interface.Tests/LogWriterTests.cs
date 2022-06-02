@@ -56,7 +56,7 @@ namespace GriffinPlus.Lib.Logging
 			get
 			{
 				// NOTE: The generic GetWriter<>() method does not support generic type definitions
-				yield return new object[] { typeof(LogWriterTests), "GriffinPlus.Lib.Logging.LogWriterTests" };
+				yield return new object[] { typeof(int), "System.Int32" };
 				yield return new object[] { typeof(List<int>), "System.Collections.Generic.List<System.Int32>" };
 				yield return new object[] { typeof(Dictionary<int, string>), "System.Collections.Generic.Dictionary<System.Int32,System.String>" };
 			}
@@ -106,9 +106,11 @@ namespace GriffinPlus.Lib.Logging
 		{
 			get
 			{
-				foreach (var item in LogWriterCreationTestData1) yield return item;
-				yield return new object[] { typeof(List<>), "System.Collections.Generic.List<>" };
-				yield return new object[] { typeof(Dictionary<,>), "System.Collections.Generic.Dictionary<,>" };
+				yield return new object[] { typeof(uint), "System.UInt32" };
+				yield return new object[] { typeof(List<uint>), "System.Collections.Generic.List<System.UInt32>" };
+				yield return new object[] { typeof(Dictionary<uint, string>), "System.Collections.Generic.Dictionary<System.UInt32,System.String>" };
+				yield return new object[] { typeof(List<>), "System.Collections.Generic.List<T>" };
+				yield return new object[] { typeof(Dictionary<,>), "System.Collections.Generic.Dictionary<TKey,TValue>" };
 			}
 		}
 

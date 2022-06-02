@@ -215,41 +215,51 @@ namespace GriffinPlus.Lib.Logging
 		/// <returns>The requested log writer.</returns>
 		public static LogWriter Get(Type type)
 		{
-			void AppendName(StringBuilder sb, DecomposedType dt)
+			void AppendName(StringBuilder sb, Type t)
 			{
-				var typeInfo = dt.Type.GetTypeInfo();
-				if (typeInfo.IsGenericTypeDefinition)
+				var typeInfo = t.GetTypeInfo();
+				if (typeInfo.IsGenericParameter)
 				{
-					Debug.Assert(typeInfo.FullName != null, "typeInfo.FullName != null");
-					var match = sExtractGenericArgumentTypeRegex.Match(typeInfo.FullName);
+					sb.Append(typeInfo.Name);
+				}
+				else if (typeInfo.IsGenericType)
+				{
+					sb.Append(typeInfo.Namespace);
+					sb.Append('.');
+					var match = sExtractGenericArgumentTypeRegex.Match(typeInfo.Name);
 					sb.Append(match.Groups[1].Value);
 					sb.Append('<');
-					if (dt.GenericTypeArguments.Count > 0)
+					if (typeInfo.IsConstructedGenericType)
 					{
-						// a generic type
-						for (int i = 0; i < dt.GenericTypeArguments.Count; i++)
+						// constructed generic type
+						for (int i = 0; i < typeInfo.GenericTypeArguments.Length; i++)
 						{
 							if (i > 0) sb.Append(',');
-							AppendName(sb, dt.GenericTypeArguments[i]);
+							AppendName(sb, typeInfo.GenericTypeArguments[i]);
 						}
 					}
 					else
 					{
-						// a generic type definition
-						sb.Append(new string(',', typeInfo.GenericTypeParameters.Length - 1));
+						// generic type definition
+						for (int i = 0; i < typeInfo.GenericTypeParameters.Length; i++)
+						{
+							if (i > 0) sb.Append(',');
+							AppendName(sb, typeInfo.GenericTypeParameters[i]);
+						}
 					}
 
 					sb.Append('>');
 				}
 				else
 				{
-					sb.Append(typeInfo.FullName);
+					sb.Append(typeInfo.Namespace);
+					sb.Append('.');
+					sb.Append(typeInfo.Name);
 				}
 			}
 
-			var types = TypeDecomposer.DecomposeType(type);
 			var builder = new StringBuilder();
-			AppendName(builder, types);
+			AppendName(builder, type);
 			return Get(builder.ToString());
 		}
 
