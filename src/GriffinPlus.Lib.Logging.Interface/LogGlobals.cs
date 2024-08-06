@@ -3,19 +3,16 @@
 // The source code is licensed under the MIT license.
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-namespace GriffinPlus.Lib.Logging
+namespace GriffinPlus.Lib.Logging;
+
+/// <summary>
+/// Some global data (for internal use only).
+/// </summary>
+static class LogGlobals
 {
-
 	/// <summary>
-	/// Some global data (for internal use only).
+	/// Object that is used to synchronize access to shared resources in the logging subsystem.
+	/// Used in conjunction with monitor synchronization.
 	/// </summary>
-	static class LogGlobals
-	{
-		/// <summary>
-		/// Object that is used to synchronize access to shared resources in the logging subsystem.
-		/// Used in conjunction with monitor synchronization.
-		/// </summary>
-		public static readonly object Sync = new object();
-	}
-
+	public static readonly object Sync = new();
 }

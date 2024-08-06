@@ -1,0 +1,13 @@
+﻿.\GriffinPlus.Lib.Logging.Interface.dll
+.\GriffinPlus.Lib.Logging.Interface.pdb
+.\GriffinPlus.Lib.Logging.Interface.Tests.deps.json
+.\GriffinPlus.Lib.Logging.Interface.Tests.dll
+.\GriffinPlus.Lib.Logging.Interface.Tests.pdb
+.\GriffinPlus.Lib.Logging.Interface.Tests.runtimeconfig.dev.json
+.\GriffinPlus.Lib.Logging.Interface.Tests.runtimeconfig.json
+.\GriffinPlus.Lib.Logging.Interface.xml
+.\testhost.dll
+.\testhost.exe
+.\xunit.runner.reporters.netcoreapp10.dll
+.\xunit.runner.utility.netcoreapp10.dll
+.\xunit.runner.visualstudio.dotnetcore.testadapter.dll

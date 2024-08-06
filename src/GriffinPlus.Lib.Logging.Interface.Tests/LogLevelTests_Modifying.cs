@@ -7,47 +7,45 @@ using System;
 
 using Xunit;
 
-namespace GriffinPlus.Lib.Logging
+namespace GriffinPlus.Lib.Logging;
+
+/// <summary>
+/// Unit tests targeting the <see cref="LogLevel"/> class.
+/// </summary>
+[Collection("LogLevelTests")]
+public class LogLevelTests_Modifying
 {
+	#region GetAspect(string name)
 
 	/// <summary>
-	/// Unit tests targeting the <see cref="LogLevel"/> class.
+	/// Tests the <see cref="LogLevel.GetAspect"/> method.
 	/// </summary>
-	[Collection("LogLevelTests")]
-	public class LogLevelTests_Modifying
+	[Fact]
+	public void GetAspect()
 	{
-		#region GetAspect(string name)
+		LogLevel eventLogLevel = null;
 
-		/// <summary>
-		/// Tests the <see cref="LogLevel.GetAspect"/> method.
-		/// </summary>
-		[Fact]
-		public void GetAspect()
+		try
 		{
-			LogLevel eventLogLevel = null;
-
-			void Handler(LogLevel level)
-			{
-				eventLogLevel = level;
-			}
-
-			try
-			{
-				LogLevel.NewLogLevelRegistered += Handler;
-				string name = Guid.NewGuid().ToString("D");
-				var level = LogLevel.GetAspect(name);
-				Assert.NotNull(level);
-				Assert.Equal(LogLevel.MaxId, level.Id);
-				Assert.Equal(name, level.Name);
-				Assert.Same(level, eventLogLevel);
-			}
-			finally
-			{
-				LogLevel.NewLogLevelRegistered -= Handler;
-			}
+			LogLevel.NewLogLevelRegistered += Handler;
+			string name = Guid.NewGuid().ToString("D");
+			LogLevel level = LogLevel.GetAspect(name);
+			Assert.NotNull(level);
+			Assert.Equal(LogLevel.MaxId, level.Id);
+			Assert.Equal(name, level.Name);
+			Assert.Same(level, eventLogLevel);
 		}
+		finally
+		{
+			LogLevel.NewLogLevelRegistered -= Handler;
+		}
+		return;
 
-		#endregion
+		void Handler(LogLevel level)
+		{
+			eventLogLevel = level;
+		}
 	}
 
+	#endregion
 }

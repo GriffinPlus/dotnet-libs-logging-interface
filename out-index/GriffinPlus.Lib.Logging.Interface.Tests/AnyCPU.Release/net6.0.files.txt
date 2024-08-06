@@ -4,7 +4,6 @@
 .\GriffinPlus.Lib.Logging.Interface.Tests.deps.json
 .\GriffinPlus.Lib.Logging.Interface.Tests.dll
 .\GriffinPlus.Lib.Logging.Interface.Tests.pdb
-.\GriffinPlus.Lib.Logging.Interface.Tests.runtimeconfig.dev.json
 .\GriffinPlus.Lib.Logging.Interface.Tests.runtimeconfig.json
 .\GriffinPlus.Lib.Logging.Interface.xml
 .\Microsoft.TestPlatform.CommunicationUtilities.dll
@@ -24,7 +23,7 @@
 .\xunit.execution.dotnet.dll
 .\xunit.runner.reporters.netcoreapp10.dll
 .\xunit.runner.utility.netcoreapp10.dll
-.\xunit.runner.visualstudio.dotnetcore.testadapter.dll
+.\xunit.runner.visualstudio.testadapter.dll
 .\cs\Microsoft.TestPlatform.CommunicationUtilities.resources.dll
 .\cs\Microsoft.TestPlatform.CoreUtilities.resources.dll
 .\cs\Microsoft.TestPlatform.CrossPlatEngine.resources.dll

@@ -1,8 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<TargetFrameworks>net461; netcoreapp3.1; net5.0</TargetFrameworks>
+		<TargetFrameworks>net461; netcoreapp3.1; net5.0; net6.0; net7.0; net8.0</TargetFrameworks>
+		<NoWarn>$(NoWarn);NETSDK1138;NU1902;NU1903</NoWarn>
+		<LangVersion>latest</LangVersion>
 	</PropertyGroup>
 
 	<ItemGroup>

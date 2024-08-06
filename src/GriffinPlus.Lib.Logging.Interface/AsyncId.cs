@@ -5,42 +5,37 @@
 
 using System.Threading;
 
-namespace GriffinPlus.Lib.Logging
+namespace GriffinPlus.Lib.Logging;
+
+/// <summary>
+/// Helper that manages an integer identifier that remains constant along an asynchronous control flow (TPL).<br/>
+/// This identifier can help to track asynchronous controls flows across multiple threads.
+/// </summary>
+public static class AsyncId
 {
+	private static readonly AsyncLocal<uint> sAsyncId        = new();
+	private static          int              sAsyncIdCounter = 0;
 
 	/// <summary>
-	/// Helper that manages an integer identifier that remains constant along an asynchronous control flow (TPL).
-	/// This identifier can help to track asynchronous controls flows across multiple threads.
+	/// Gets an id that is valid for the entire asynchronous control flow.<br/>
+	/// It should be queried the first time when the asynchronous path starts.<br/>
+	/// It starts with 1. When wrapping around it skips 0, so 0 can be safely used to indicate an invalid/unassigned id.
 	/// </summary>
-	public static class AsyncId
+	public static uint Current
 	{
-		private static readonly AsyncLocal<uint> sAsyncId        = new AsyncLocal<uint>();
-		private static          int              sAsyncIdCounter = 0;
-
-		/// <summary>
-		/// Gets an id that is valid for the entire asynchronous control flow.
-		/// It should be queried the first time where the asynchronous path starts.
-		/// It starts with 1. When wrapping around it skips 0, so 0 can be safely used to indicate an invalid/unassigned id.
-		/// </summary>
-		public static uint Current
+		get
 		{
-			get
+			unchecked
 			{
-				unchecked
-				{
-					uint id = sAsyncId.Value;
+				uint id = sAsyncId.Value;
 
-					if (id == 0)
-					{
-						id = (uint)Interlocked.Increment(ref sAsyncIdCounter);
-						if (id == 0) id = (uint)Interlocked.Increment(ref sAsyncIdCounter); // handles overflow
-						sAsyncId.Value = id;
-					}
+				if (id != 0) return id;
+				id = (uint)Interlocked.Increment(ref sAsyncIdCounter);
+				if (id == 0) id = (uint)Interlocked.Increment(ref sAsyncIdCounter); // handles overflow
+				sAsyncId.Value = id;
 
-					return id;
-				}
+				return id;
 			}
 		}
 	}
-
 }
