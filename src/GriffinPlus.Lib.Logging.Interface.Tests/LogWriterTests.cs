@@ -22,6 +22,8 @@ namespace GriffinPlus.Lib.Logging;
 [Collection("LogWriterTests")]
 public class LogWriterTests
 {
+	private static readonly string[] sNewlineTokens = ["\r\n", "\r", "\n"];
+
 	#region Get(string name)
 
 	/// <summary>
@@ -439,16 +441,25 @@ public class LogWriterTests
 		{
 			try
 			{
-				throw new Exception($"inner exception {i}");
+				try
+				{
+					throw new Exception($"inner exception {i} (single-line)");
+				}
+				catch (Exception ex)
+				{
+					throw new Exception($"outer exception {i}\r\n(multi-line)", ex);
+				}
 			}
-			catch (Exception e)
+			catch (Exception ex)
 			{
-				throw new Exception($"outer exception {i}", e);
+				throw new AggregateException(
+					ex,
+					new Exception("exception without stack-trace"));
 			}
 		}
-		catch (Exception e)
+		catch (Exception ex)
 		{
-			return e;
+			return ex;
 		}
 	}
 
@@ -471,26 +482,77 @@ public class LogWriterTests
 	private static string UnwrapException(Exception exception)
 	{
 		var builder = new StringBuilder();
-		builder.AppendLine();
+		Build(builder, exception, indent: 0);
+		return builder.ToString();
 
-		int innerExceptionLevel = 0;
-		Exception current = exception;
-		while (current != null)
+		static void Build(StringBuilder builder, Exception exception, int indent)
 		{
-			builder.Append(
-				innerExceptionLevel == 0
-					? "--- Exception ---------------------------------------------------------------------------------------------\r\n"
-					: "--- Inner Exception ---------------------------------------------------------------------------------------\r\n");
-			builder.AppendFormat("--- Exception Type: {0}\r\n", exception.GetType().FullName);
-			builder.AppendFormat("--- Message: {0}\r\n", current.Message);
-			builder.AppendFormat("--- Stacktrace:\r\n{0}", current.StackTrace);
-			builder.AppendLine();
+			// start of exception
+			AppendIndentation(builder, indent);
+			builder.AppendLine(
+				indent == 0
+					? "--- Exception ---------------------------------------------------------------------------------------------"
+					: "--- Inner Exception ---------------------------------------------------------------------------------------");
 
-			current = current.InnerException;
-			innerExceptionLevel++;
+			// exception type
+			AppendIndentation(builder, indent);
+			builder.Append("--- Exception Type: ");
+			builder.AppendLine(exception.GetType().FullName);
+
+			string[] lines = exception.Message.Split(sNewlineTokens, StringSplitOptions.None);
+			if (lines.Length > 1)
+			{
+				// multi-line message
+				AppendIndentation(builder, indent);
+				builder.AppendLine("--- Message:");
+				foreach (string line in exception.Message.Split(sNewlineTokens, StringSplitOptions.None))
+				{
+					AppendIndentation(builder, indent);
+					builder.Append(' ', 4);
+					builder.AppendLine(line);
+				}
+			}
+			else
+			{
+				// single-line message
+				AppendIndentation(builder, indent);
+				builder.Append("--- Message: ");
+				builder.AppendLine(lines.Length > 0 ? lines[0] : "");
+			}
+
+			// stack trace
+			if (exception.StackTrace != null)
+			{
+				AppendIndentation(builder, indent);
+				builder.AppendLine("--- Stacktrace:");
+				foreach (string line in exception.StackTrace.Split(sNewlineTokens, StringSplitOptions.None))
+				{
+					AppendIndentation(builder, indent);
+					builder.Append(' ', 4);
+					builder.AppendLine(line);
+				}
+			}
+
+			// inner exceptions
+			if (exception is AggregateException aggregateException)
+			{
+				foreach (Exception innerException in aggregateException.InnerExceptions)
+				{
+					builder.AppendLine();
+					Build(builder, innerException, indent: indent + 1);
+				}
+			}
+			else if (exception.InnerException != null)
+			{
+				builder.AppendLine();
+				Build(builder, exception.InnerException, indent: indent + 1);
+			}
 		}
 
-		return builder.ToString();
+		static void AppendIndentation(StringBuilder builder, int indent)
+		{
+			for (int i = 0; i < indent; i++) builder.Append("> ");
+		}
 	}
 
 	#endregion
