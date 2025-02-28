@@ -1,6 +1,13 @@
 # Changelog
 ---
 
+## Release v1.2.0
+
+Added the `FailFast` class providing the `TerminateApplication(...)` method to request terminating the application
+immediately. This is useful when an unrecoverable error occurs and the application should not continue to run.
+When used in conjunction with the `GriffinPlus.Lib.Logging` package (version >= 7.0.5), the method writes a message
+to the log, flushes buffered messages and then calls `Environment.FailFast(...)` to terminate the process.
+
 ## Release v1.1.2
 
 Added missing support for unwrapping `AggregateException` when using `LogWriter.Write(...)` methods.

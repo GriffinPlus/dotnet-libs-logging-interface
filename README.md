@@ -158,6 +158,10 @@ public void Write(IFormatProvider provider, LogLevel level, string format, param
 
 The `AsyncId` class comes in handy when tracking asynchronous control flows using .NET's Task Parallel Library (TPL). Its `Current` property provides an integer value that remains constant all along the entire control flow starting from the point of its first invocation.
 
+#### FailFast
+
+The `FailFast` class provides the `TerminateApplication(...)` method to request terminating the application immediately. This is useful when an unrecoverable error occurs and the application should not continue to run. When used in conjunction with the `GriffinPlus.Lib.Logging` package (version >= 7.0.5), the method writes a message to the log, flushes buffered messages and then calls `Environment.FailFast(...)` to terminate the process.
+
 #### GetTimestamp()
 
 The `GetTimestamp()` method of the `LogWriter` class returns an absolute timestamp (with timezone offset) as used by Griffin+ logging.
@@ -165,6 +169,7 @@ The `GetTimestamp()` method of the `LogWriter` class returns an absolute timesta
 #### GetHighPrecisionTimestamp()
 
 The `GetHighPrecisionTimestamp()` method of the `LogWriter` class returns a timestamp with nanosecond precision. The actual resolution of the timestamp depends on the system's clock, but on most modern systems the resolution is finer than one nanosecond. This timestamp can be used to measure timespans very accurately.
+
 
 ### Complete Example
 
