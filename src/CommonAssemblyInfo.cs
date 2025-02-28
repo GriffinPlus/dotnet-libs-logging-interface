@@ -2,10 +2,10 @@
 
 [assembly: AssemblyCompany("Griffin+")]
 [assembly: AssemblyProduct("Griffin+ Logging")]
-[assembly: AssemblyCopyright("Copyright (c) 2024 Sascha Falk and Contributors")]
-[assembly: AssemblyVersion("1.1.2.0")]
-[assembly: AssemblyFileVersion("1.1.2.0")]
-[assembly: AssemblyInformationalVersion("1.1.2-ci.1+Branch.master.Sha.16510ff3152522123a0e43b3eb130ed3b1b2b241")]
+[assembly: AssemblyCopyright("Copyright (c) 2025 Sascha Falk and Contributors")]
+[assembly: AssemblyVersion("0.0.0.0")]
+[assembly: AssemblyFileVersion("0.0.0.0")]
+[assembly: AssemblyInformationalVersion("--generated--")]
 
 #if DEBUG
 [assembly: AssemblyConfiguration("Debug")]

@@ -5,7 +5,7 @@
 		<id>GriffinPlus.Lib.Logging.Interface</id>
 		<version>$version$</version>
 		<authors>Sascha Falk</authors>
-		<copyright>Copyright (c) 2024 Sascha Falk and Contributors</copyright>
+		<copyright>Copyright (c) 2025 Sascha Falk and Contributors</copyright>
 		<requireLicenseAcceptance>false</requireLicenseAcceptance>
 		<description>The interface to the Griffin+ logging system. Libraries should use this package as it is very stable. Applications should use the GriffinPlus.Lib.Logging package which receives updates more often.</description>
 		<license type="expression">MIT</license>
