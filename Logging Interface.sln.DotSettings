@@ -3,8 +3,10 @@
 	<s:String x:Key="/Default/Environment/InjectedLayers/FileInjectedLayer/=C21E5ABB2BB0C84EA8CA8C6393A54EFF/RelativePath/@EntryValue">..\build.vs\ReSharper.DotSettings</s:String>
 	<s:Boolean x:Key="/Default/Environment/InjectedLayers/InjectedLayerCustomization/=FileC21E5ABB2BB0C84EA8CA8C6393A54EFF/@KeyIndexDefined">True</s:Boolean>
 	<s:Double x:Key="/Default/Environment/InjectedLayers/InjectedLayerCustomization/=FileC21E5ABB2BB0C84EA8CA8C6393A54EFF/RelativePriority/@EntryValue">1</s:Double>
+	<s:Boolean x:Key="/Default/GrammarAndSpelling/GrammarChecking/Exceptions/=An_0020enumerable_0020of/@EntryIndexedValue">True</s:Boolean>
 	<s:Boolean x:Key="/Default/UserDictionary/Words/=carg/@EntryIndexedValue">True</s:Boolean>
 	<s:Boolean x:Key="/Default/UserDictionary/Words/=Decomposer/@EntryIndexedValue">True</s:Boolean>
+	<s:Boolean x:Key="/Default/UserDictionary/Words/=enumerables/@EntryIndexedValue">True</s:Boolean>
 	<s:Boolean x:Key="/Default/UserDictionary/Words/=etstandard/@EntryIndexedValue">True</s:Boolean>
 	<s:Boolean x:Key="/Default/UserDictionary/Words/=Falk/@EntryIndexedValue">True</s:Boolean>
 	<s:Boolean x:Key="/Default/UserDictionary/Words/=Sascha/@EntryIndexedValue">True</s:Boolean>

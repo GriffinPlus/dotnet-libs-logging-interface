@@ -4,11 +4,16 @@
 		<TargetFrameworks>net461; net48; netstandard2.0; net6.0; net8.0</TargetFrameworks>
 		<AssemblyName>GriffinPlus.Lib.Logging.Interface</AssemblyName>
 		<RootNamespace>GriffinPlus.Lib.Logging</RootNamespace>
+		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(TargetFramework)' == 'net461'">
+		<PackageReference Include="System.ValueTuple" Version="4.5.0" />
 	</ItemGroup>
 
 </Project>
