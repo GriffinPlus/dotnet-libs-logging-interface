@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 
 using Xunit;
+using Xunit.Priority;
 
 // ReSharper disable CanSimplifyStringEscapeSequence
 
@@ -16,7 +17,8 @@ namespace GriffinPlus.Lib.Logging;
 /// <summary>
 /// Unit tests targeting the <see cref="LogLevel"/> class.
 /// </summary>
-[Collection("LogLevelTests")]
+[Collection(TestOrder.TestsCollectionName)]
+[TestCaseOrderer(PriorityOrderer.Name, PriorityOrderer.Assembly)]
 public class LogLevelTests
 {
 	#region Expected Results
@@ -62,6 +64,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.FirstAspectId"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void FirstAspectId()
 	{
 		int expected = LogLevel.Timing.Id; // the first predefined aspect level
@@ -76,6 +79,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.MaxId"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void MaxId()
 	{
 		// the 'Timing' aspect log level is the one and only aspect log level and therefore the
@@ -92,6 +96,7 @@ public class LogLevelTests
 	/// Checks whether the special log level 'None' has the expected name and id.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void None()
 	{
 		Assert.Equal(-1, LogLevel.None.Id);
@@ -107,6 +112,7 @@ public class LogLevelTests
 	/// Checks whether the special log level 'All' has the expected name and id.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void All()
 	{
 		Assert.Equal(int.MaxValue, LogLevel.All.Id);
@@ -121,6 +127,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.Emergency"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void Emergency()
 	{
 		Assert.Equal(sExpectedPredefinedLogLevels[0].Id, LogLevel.Emergency.Id);
@@ -135,6 +142,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.Alert"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void Alert()
 	{
 		Assert.Equal(sExpectedPredefinedLogLevels[1].Id, LogLevel.Alert.Id);
@@ -149,6 +157,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.Critical"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void Critical()
 	{
 		Assert.Equal(sExpectedPredefinedLogLevels[2].Id, LogLevel.Critical.Id);
@@ -163,6 +172,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.Error"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void Error()
 	{
 		Assert.Equal(sExpectedPredefinedLogLevels[3].Id, LogLevel.Error.Id);
@@ -177,6 +187,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.Warning"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void Warning()
 	{
 		Assert.Equal(sExpectedPredefinedLogLevels[4].Id, LogLevel.Warning.Id);
@@ -191,6 +202,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.Notice"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void Notice()
 	{
 		Assert.Equal(sExpectedPredefinedLogLevels[5].Id, LogLevel.Notice.Id);
@@ -205,6 +217,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.Informational"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void Informational()
 	{
 		Assert.Equal(sExpectedPredefinedLogLevels[6].Id, LogLevel.Informational.Id);
@@ -219,6 +232,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.Debug"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void Debug()
 	{
 		Assert.Equal(sExpectedPredefinedLogLevels[7].Id, LogLevel.Debug.Id);
@@ -233,6 +247,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.Trace"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void Trace()
 	{
 		Assert.Equal(sExpectedPredefinedLogLevels[8].Id, LogLevel.Trace.Id);
@@ -247,6 +262,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.PredefinedLogLevels"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void PredefinedLogLevels()
 	{
 		LogLevel[] levels = LogLevel.PredefinedLogLevels.ToArray();
@@ -267,6 +283,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.KnownLevels"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void KnownLevels()
 	{
 		LogLevel[] levels = LogLevel.KnownLevels.ToArray();
@@ -287,6 +304,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.KnownLevelsByName"/> property.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void KnownLevelsByName()
 	{
 		// set up a new dictionary with the same elements to work with
@@ -324,6 +342,7 @@ public class LogLevelTests
 	/// Tests the <see cref="LogLevel.op_Implicit"/> conversion operator.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void OperatorString()
 	{
 		foreach (LogLevel level in LogLevel.KnownLevels)
@@ -372,10 +391,46 @@ public class LogLevelTests
 	/// The method should throw an <see cref="ArgumentNullException"/> in this case.
 	/// </summary>
 	[Fact]
+	[Priority(TestOrder.NonModifying)]
 	public void CheckName_NameIsNull()
 	{
 		var exception = Assert.Throws<ArgumentNullException>(() => LogLevel.CheckName(null!));
 		Assert.Equal("name", exception.ParamName);
+	}
+
+	#endregion
+
+	#region GetAspect(string name)
+
+	/// <summary>
+	/// Tests the <see cref="LogLevel.GetAspect"/> method.
+	/// </summary>
+	[Fact]
+	[Priority(TestOrder.ModifyingBase)]
+	public void GetAspect()
+	{
+		LogLevel? eventLogLevel = null;
+
+		try
+		{
+			LogLevel.NewLogLevelRegistered += Handler;
+			string name = Guid.NewGuid().ToString("D");
+			LogLevel level = LogLevel.GetAspect(name);
+			Assert.NotNull(level);
+			Assert.Equal(LogLevel.MaxId, level.Id);
+			Assert.Equal(name, level.Name);
+			Assert.Same(level, eventLogLevel);
+		}
+		finally
+		{
+			LogLevel.NewLogLevelRegistered -= Handler;
+		}
+		return;
+
+		void Handler(LogLevel level)
+		{
+			eventLogLevel = level;
+		}
 	}
 
 	#endregion

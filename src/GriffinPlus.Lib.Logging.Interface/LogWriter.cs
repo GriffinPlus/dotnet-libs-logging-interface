@@ -28,6 +28,7 @@ public sealed class LogWriter
 	private static          ILogWriterConfiguration?         sLogWriterConfiguration          = null;
 	private static readonly IFormatProvider                  sDefaultFormatProvider           = CultureInfo.InvariantCulture;
 	private static readonly ThreadLocal<StringBuilder>       sBuilder                         = new(() => new StringBuilder());
+	private static readonly PrettyOptions                    sPrettyProfile                   = PrettyPresets.Standard;
 	private static readonly char[]                           sLineSeparators                  = Unicode.NewLineCharacters.ToCharArray();
 	private static readonly string[]                         sNewlineTokens                   = ["\r\n", "\r", "\n"];
 	private static readonly Regex                            sExtractGenericArgumentTypeRegex = new("^([^`]+)`\\d+$", RegexOptions.Compiled);
@@ -319,15 +320,20 @@ public sealed class LogWriter
 	/// Do not call this method when using Griffin+ Logging as it takes care of configuring log writers!
 	/// </summary>
 	/// <param name="configuration">The log writer Configuration to use.</param>
+	/// <returns>
+	/// The old log writer configuration (may be <see langword="null"/>).
+	/// </returns>
 	/// <exception cref="NullReferenceException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
-	public static void UpdateLogWriters(ILogWriterConfiguration configuration)
+	public static ILogWriterConfiguration? UpdateLogWriters(ILogWriterConfiguration configuration)
 	{
 		if (configuration == null) throw new ArgumentNullException(nameof(configuration));
 
 		lock (LogGlobals.Sync)
 		{
+			ILogWriterConfiguration? oldConfiguration = sLogWriterConfiguration;
 			sLogWriterConfiguration = configuration;
 			foreach (LogWriter writer in sLogWritersById) writer.Update(configuration);
+			return oldConfiguration;
 		}
 	}
 
@@ -1081,19 +1087,8 @@ public sealed class LogWriter
 		if (!IsLogLevelActive(level))
 			return;
 
-		// unwrap exceptions to ensure inner exceptions are logged as well
-		object[] modifiedArgs = args;
-		for (int i = 0; i < modifiedArgs.Length; i++)
-		{
-			object obj = modifiedArgs[i];
-			if (obj is not Exception exception) continue;
-			if (modifiedArgs == args) modifiedArgs = (object[])args.Clone();
-			modifiedArgs[i] = UnwrapException(exception);
-		}
-
-		args = modifiedArgs;
-
 		// format message and raise the event to notify clients of the written message
+		PrettyFormatArguments(ref args);
 		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, args);
@@ -1114,19 +1109,8 @@ public sealed class LogWriter
 		string          format,
 		params object[] args)
 	{
-		// unwrap exceptions to ensure inner exceptions are logged as well
-		object[] modifiedArgs = args;
-		for (int i = 0; i < modifiedArgs.Length; i++)
-		{
-			object obj = modifiedArgs[i];
-			if (obj is not Exception exception) continue;
-			if (modifiedArgs == args) modifiedArgs = (object[])args.Clone();
-			modifiedArgs[i] = UnwrapException(exception);
-		}
-
-		args = modifiedArgs;
-
 		// format message and raise the event to notify clients of the written message
+		PrettyFormatArguments(ref args);
 		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, args);
@@ -2000,14 +1984,101 @@ public sealed class LogWriter
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private static object? PrepareArgument<T>(T arg)
 	{
-		if (arg is Exception exception) return UnwrapException(exception);
+		if (arg is Type type) return PrettyFormatter.Format(type, sPrettyProfile);
+		if (arg is Type[] types) return PrettyFormatter.Format(types, sPrettyProfile);
+		if (arg is IEnumerable<Type> typeSequence) return PrettyFormatter.Format(typeSequence, sPrettyProfile);
+		if (arg is ParameterInfo parameterInfo) return PrettyFormatter.Format(parameterInfo, sPrettyProfile);
+		if (arg is MemberInfo memberInfo) return PrettyFormatter.Format(memberInfo, sPrettyProfile);
+		if (arg is Exception exception) return PrettyFormatter.Format(exception, sPrettyProfile);
+		if (arg is Assembly assembly) return PrettyFormatter.Format(assembly, sPrettyProfile);
+		if (arg is AssemblyName assemblyName) return PrettyFormatter.Format(assemblyName, sPrettyProfile);
+		if (arg is Module module) return PrettyFormatter.Format(module, sPrettyProfile);
 		return arg;
+	}
+
+	/// <summary>
+	/// Formats the elements of the specified array of arguments into their "pretty" string representations.
+	/// </summary>
+	/// <remarks>
+	/// This method modifies the input array in place, replacing supported types with their formatted
+	/// string representations. If the array contains unsupported types, those elements will remain unchanged.
+	/// The method ensures that the original array is cloned before any modifications are made, preserving the original
+	/// array if it is referenced elsewhere.
+	/// </remarks>
+	/// <param name="args">
+	/// A reference to the array of arguments to format. The array may contain elements of various types,
+	/// such as <see cref="Type"/>, <see cref="Type"/> array, <see cref="IEnumerable{T}"/> of <see cref="Type"/>,
+	/// <see cref="ParameterInfo"/>, <see cref="MemberInfo"/>, <see cref="Exception"/>, <see cref="Assembly"/>,
+	/// <see cref="AssemblyName"/>, or <see cref="Module"/>. Elements of these types will be replaced with their
+	/// formatted string representations.
+	/// </param>
+	private static void PrettyFormatArguments(ref object[] args)
+	{
+		bool cloned = false;
+		for (int i = 0; i < args.Length; i++)
+		{
+			object obj = args[i];
+			if (obj is Type type)
+			{
+				EnsureCloned(ref cloned, ref args);
+				args[i] = PrettyFormatter.Format(type, sPrettyProfile);
+			}
+			else if (obj is Type[] types)
+			{
+				EnsureCloned(ref cloned, ref args);
+				args[i] = PrettyFormatter.Format(types, sPrettyProfile);
+			}
+			else if (obj is IEnumerable<Type> typeSequence)
+			{
+				EnsureCloned(ref cloned, ref args);
+				args[i] = PrettyFormatter.Format(typeSequence, sPrettyProfile);
+			}
+			else if (args[i] is ParameterInfo parameterInfo)
+			{
+				EnsureCloned(ref cloned, ref args);
+				args[i] = PrettyFormatter.Format(parameterInfo, sPrettyProfile, null);
+			}
+			else if (obj is MemberInfo memberInfo)
+			{
+				EnsureCloned(ref cloned, ref args);
+				args[i] = PrettyFormatter.Format(memberInfo, sPrettyProfile);
+			}
+			else if (obj is Exception exception)
+			{
+				EnsureCloned(ref cloned, ref args);
+				args[i] = PrettyFormatter.Format(exception, sPrettyProfile);
+			}
+			else if (obj is Assembly assembly)
+			{
+				EnsureCloned(ref cloned, ref args);
+				args[i] = PrettyFormatter.Format(assembly, sPrettyProfile);
+			}
+			else if (obj is AssemblyName assemblyName)
+			{
+				EnsureCloned(ref cloned, ref args);
+				args[i] = PrettyFormatter.Format(assemblyName, sPrettyProfile);
+			}
+			else if (obj is Module module)
+			{
+				EnsureCloned(ref cloned, ref args);
+				args[i] = PrettyFormatter.Format(module, sPrettyProfile);
+			}
+		}
+		return;
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		static void EnsureCloned(ref bool cloned, ref object[] args)
+		{
+			if (cloned) return;
+			args = (object[])args.Clone();
+			cloned = true;
+		}
 	}
 
 	/// <summary>
 	/// Gets a string containing the type, the message and the stacktrace of the specified exception and all of its inner exception.
 	/// </summary>
-	/// <param name="exception"></param>
+	/// <param name="exception">Exception to unwrap and format.</param>
 	/// <returns>The exception in a properly formatted fashion.</returns>
 	public static string UnwrapException(Exception exception)
 	{
