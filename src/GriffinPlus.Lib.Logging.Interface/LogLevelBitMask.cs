@@ -5,6 +5,7 @@
 
 using System;
 
+// ReSharper disable LoopCanBeConvertedToQuery
 // ReSharper disable NonReadonlyMemberInGetHashCode
 
 namespace GriffinPlus.Lib.Logging;
@@ -24,8 +25,8 @@ public class LogLevelBitMask
 	/// <param name="size">Size of the bit field (is rounded up to the next multiple of 32).</param>
 	/// <param name="set">Initial value of the bits in the bit mask.</param>
 	/// <param name="paddingValue">
-	/// <c>true</c> to consider bits outside the mask as 'set';<br/>
-	/// <c>false</c> to consider them as 'cleared'.
+	/// <see langword="true"/> to consider bits outside the mask as 'set';<br/>
+	/// <see langword="false"/> to consider them as 'cleared'.
 	/// </param>
 	/// <exception cref="ArgumentOutOfRangeException"><paramref name="size"/> is negative.</exception>
 	public LogLevelBitMask(int size, bool set, bool paddingValue)
@@ -41,7 +42,10 @@ public class LogLevelBitMask
 	/// <summary>
 	/// Initializes a new instance of the <see cref="LogLevelBitMask"/> class (for internal use only).
 	/// </summary>
-	private LogLevelBitMask() { }
+	private LogLevelBitMask()
+	{
+		mBitField = null!; // will be initialized by the operators
+	}
 
 	/// <summary>
 	/// Gets a bit mask of zero length with '0' padding.
@@ -84,10 +88,10 @@ public class LogLevelBitMask
 	/// <param name="mask1">First bit mask.</param>
 	/// <param name="mask2">Second bit mask.</param>
 	/// <returns>
-	/// <c>true</c>, if the bit masks are equal;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/>, if the bit masks are equal;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
-	public static bool operator ==(LogLevelBitMask mask1, LogLevelBitMask mask2)
+	public static bool operator ==(LogLevelBitMask? mask1, LogLevelBitMask? mask2)
 	{
 		if (ReferenceEquals(mask1, mask2)) return true;
 		if (ReferenceEquals(mask1, null)) return false;
@@ -144,10 +148,10 @@ public class LogLevelBitMask
 	/// <param name="mask1">First bit mask.</param>
 	/// <param name="mask2">Second bit mask.</param>
 	/// <returns>
-	/// <c>true</c>, if the bit masks are not equal;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/>, if the bit masks are not equal;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
-	public static bool operator !=(LogLevelBitMask mask1, LogLevelBitMask mask2)
+	public static bool operator !=(LogLevelBitMask? mask1, LogLevelBitMask? mask2)
 	{
 		return !(mask1 == mask2);
 	}
@@ -250,8 +254,8 @@ public class LogLevelBitMask
 	/// </summary>
 	/// <param name="bit">Bit to check.</param>
 	/// <returns>
-	/// <c>true</c>, if the specified bit is set;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/>, if the specified bit is set;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
 	/// <exception cref="ArgumentOutOfRangeException">The specified bit is out of bounds.</exception>
 	public bool IsBitSet(int bit)
@@ -267,8 +271,8 @@ public class LogLevelBitMask
 	/// </summary>
 	/// <param name="bit">Bit to check.</param>
 	/// <returns>
-	/// <c>true</c>, if the specified bit is cleared;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/>, if the specified bit is cleared;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
 	/// <exception cref="ArgumentOutOfRangeException">The specified bit is out of bounds.</exception>
 	public bool IsBitCleared(int bit)
@@ -415,10 +419,10 @@ public class LogLevelBitMask
 	/// </summary>
 	/// <param name="obj">Object to compare with.</param>
 	/// <returns>
-	/// <c>true</c> if the specified bit mask equals the current one;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/> if the specified bit mask equals the current one;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
-	public override bool Equals(object obj)
+	public override bool Equals(object? obj)
 	{
 		if (obj is not LogLevelBitMask other) return false;
 		return this == other; // use overloaded equality operator

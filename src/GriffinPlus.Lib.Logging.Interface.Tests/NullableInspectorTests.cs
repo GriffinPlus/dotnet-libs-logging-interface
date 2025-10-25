@@ -82,7 +82,7 @@ public sealed partial class NullableInspectorTests
 #if NET6_0_OR_GREATER
 		Assert.Equal(Nullability.Unknown, actual);
 #else
-		Assert.True(actual == Nullability.Oblivious || actual == Nullability.Unknown);
+		Assert.True(actual is Nullability.Oblivious or Nullability.Unknown);
 #endif
 	}
 

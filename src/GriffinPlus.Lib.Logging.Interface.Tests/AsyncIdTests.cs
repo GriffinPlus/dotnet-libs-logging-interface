@@ -31,7 +31,7 @@ public class AsyncIdTests
 		Current_TestWrapAround();
 	}
 
-	private async Task Current_AssignNewIdAsync(uint expectedId)
+	private static async Task Current_AssignNewIdAsync(uint expectedId)
 	{
 		// first call to AsyncId.Current => assign a new id
 		uint id = AsyncId.Current;
@@ -51,7 +51,7 @@ public class AsyncIdTests
 		// set the internal id counter to the greatest possible value
 		unchecked
 		{
-			FieldInfo field = typeof(AsyncId).GetField("sAsyncIdCounter", BindingFlags.NonPublic | BindingFlags.Static);
+			FieldInfo? field = typeof(AsyncId).GetField("sAsyncIdCounter", BindingFlags.NonPublic | BindingFlags.Static);
 			Assert.NotNull(field);
 			field.SetValue(null, (int)uint.MaxValue);
 		}

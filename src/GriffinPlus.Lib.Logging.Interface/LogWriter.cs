@@ -25,32 +25,32 @@ public sealed class LogWriter
 	private static          Dictionary<string, LogWriter>    sLogWritersByName                = new();
 	private static          List<LogWriterTag>               sLogWriterTagsById               = [];
 	private static          Dictionary<string, LogWriterTag> sLogWriterTagsByName             = new();
-	private static          ILogWriterConfiguration          sLogWriterConfiguration          = null;
+	private static          ILogWriterConfiguration?         sLogWriterConfiguration          = null;
 	private static readonly IFormatProvider                  sDefaultFormatProvider           = CultureInfo.InvariantCulture;
 	private static readonly ThreadLocal<StringBuilder>       sBuilder                         = new(() => new StringBuilder());
 	private static readonly char[]                           sLineSeparators                  = Unicode.NewLineCharacters.ToCharArray();
 	private static readonly string[]                         sNewlineTokens                   = ["\r\n", "\r", "\n"];
 	private static readonly Regex                            sExtractGenericArgumentTypeRegex = new("^([^`]+)`\\d+$", RegexOptions.Compiled);
 	private static          int                              sNextId;
-	private readonly        List<WeakReference<LogWriter>>   mSecondaryWriters;
+	private readonly        List<WeakReference<LogWriter>>?  mSecondaryWriters;
 
 	/// <summary>
 	/// Occurs when a new log writer is registered.
 	/// The global logging lock (<see cref="LogGlobals.Sync"/>) is acquired when raising the event.
 	/// </summary>
-	public static event LogWriterRegisteredEventHandler NewLogWriterRegistered;
+	public static event LogWriterRegisteredEventHandler? NewLogWriterRegistered;
 
 	/// <summary>
 	/// Occurs when a new log writer tag is registered.
 	/// The global logging lock (<see cref="LogGlobals.Sync"/>) is acquired when raising the event.
 	/// </summary>
-	public static event LogWriterTagRegisteredEventHandler NewLogWriterTagRegistered;
+	public static event LogWriterTagRegisteredEventHandler? NewLogWriterTagRegistered;
 
 	/// <summary>
 	/// Occurs when a log writer writes a log message.
 	/// The global logging lock (<see cref="LogGlobals.Sync"/>) is not acquired when raising the event.
 	/// </summary>
-	public static event LogMessageWrittenEventHandler LogMessageWritten;
+	public static event LogMessageWrittenEventHandler? LogMessageWritten;
 
 	/// <summary>
 	/// Initializes the <see cref="LogWriter"/> class.
@@ -163,13 +163,13 @@ public sealed class LogWriter
 	/// </summary>
 	/// <param name="name">Name of the log writer to get.</param>
 	/// <returns>The requested log writer.</returns>
-	/// <exception cref="ArgumentNullException">The specified name is <c>null</c>.</exception>
+	/// <exception cref="ArgumentNullException">The specified name is <see langword="null"/>.</exception>
 	/// <exception cref="ArgumentException">The specified name is invalid.</exception>
 	public static LogWriter Get(string name)
 	{
 		CheckName(name);
 
-		sLogWritersByName.TryGetValue(name, out LogWriter writer);
+		sLogWritersByName.TryGetValue(name, out LogWriter? writer);
 		if (writer != null) return writer;
 
 		lock (LogGlobals.Sync)
@@ -281,7 +281,7 @@ public sealed class LogWriter
 	/// <returns>The requested log writer.</returns>
 	internal static LogWriterTag GetTag(string name)
 	{
-		sLogWriterTagsByName.TryGetValue(name, out LogWriterTag tag);
+		sLogWriterTagsByName.TryGetValue(name, out LogWriterTag? tag);
 		if (tag != null) return tag;
 
 		lock (LogGlobals.Sync)
@@ -319,7 +319,7 @@ public sealed class LogWriter
 	/// Do not call this method when using Griffin+ Logging as it takes care of configuring log writers!
 	/// </summary>
 	/// <param name="configuration">The log writer Configuration to use.</param>
-	/// <exception cref="NullReferenceException"><paramref name="configuration"/> is <c>null</c>.</exception>
+	/// <exception cref="NullReferenceException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
 	public static void UpdateLogWriters(ILogWriterConfiguration configuration)
 	{
 		if (configuration == null) throw new ArgumentNullException(nameof(configuration));
@@ -336,7 +336,7 @@ public sealed class LogWriter
 	/// (log writer names may consist of all characters except line separators).
 	/// </summary>
 	/// <param name="name">Name to check.</param>
-	/// <exception cref="ArgumentNullException">The specified name is <c>null</c>.</exception>
+	/// <exception cref="ArgumentNullException">The specified name is <see langword="null"/>.</exception>
 	/// <exception cref="ArgumentException">The specified name is invalid.</exception>
 	public static void CheckName(string name)
 	{
@@ -362,8 +362,8 @@ public sealed class LogWriter
 	/// </summary>
 	/// <param name="level">Log level to check.</param>
 	/// <returns>
-	/// <c>true</c>, if the specified log level is active;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/>, if the specified log level is active;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
 	public bool IsLogLevelActive(LogLevel level)
 	{
@@ -375,10 +375,10 @@ public sealed class LogWriter
 	/// </summary>
 	/// <param name="tag">
 	/// Tag the new log writer should attach to written log messages
-	/// (<c>null</c> to return the current log writer).
+	/// (<see langword="null"/> to return the current log writer).
 	/// </param>
 	/// <returns>A log writer that attaches the specified tag to written log messages.</returns>
-	public LogWriter WithTag(string tag)
+	public LogWriter WithTag(string? tag)
 	{
 		if (tag == null) return this;
 		var newTags = new LogWriterTagSet(new List<LogWriterTag>(Tags) { GetTag(tag) });
@@ -388,8 +388,13 @@ public sealed class LogWriter
 		{
 			RemoveCollectedSecondaryWriters();
 			var newWriter = new LogWriter(PrimaryWriter, newTags);
-			newWriter.ActiveLogLevelMask = sLogWriterConfiguration.GetActiveLogLevelMask(newWriter);
-			PrimaryWriter.mSecondaryWriters.Add(new WeakReference<LogWriter>(newWriter));
+
+			// set active log level mask, if the configuration is already initialized
+			if (sLogWriterConfiguration != null) newWriter.ActiveLogLevelMask = sLogWriterConfiguration.GetActiveLogLevelMask(newWriter);
+
+			// link new secondary log writer with its primary log writer
+			Debug.Assert(PrimaryWriter.mSecondaryWriters != null, "PrimaryWriter.mSecondaryWriters != null");
+			PrimaryWriter.mSecondaryWriters!.Add(new WeakReference<LogWriter>(newWriter));
 			return newWriter;
 		}
 	}
@@ -399,10 +404,10 @@ public sealed class LogWriter
 	/// </summary>
 	/// <param name="tags">
 	/// Tags the new log writer should attach to written log messages
-	/// (<c>null</c> to return the current log writer).
+	/// (<see langword="null"/> to return the current log writer).
 	/// </param>
 	/// <returns>A log writer that attaches the specified tags to written log messages.</returns>
-	public LogWriter WithTags(params string[] tags)
+	public LogWriter WithTags(params string[]? tags)
 	{
 		if (tags == null) return this;
 		var tagList = new List<LogWriterTag>(Tags);
@@ -414,8 +419,13 @@ public sealed class LogWriter
 		{
 			RemoveCollectedSecondaryWriters();
 			var newWriter = new LogWriter(PrimaryWriter, newTags);
-			newWriter.ActiveLogLevelMask = sLogWriterConfiguration.GetActiveLogLevelMask(newWriter);
-			PrimaryWriter.mSecondaryWriters.Add(new WeakReference<LogWriter>(newWriter));
+
+			// set active log level mask, if the configuration is already initialized
+			if (sLogWriterConfiguration != null) newWriter.ActiveLogLevelMask = sLogWriterConfiguration.GetActiveLogLevelMask(newWriter);
+
+			// link new secondary log writer with its primary log writer
+			Debug.Assert(PrimaryWriter.mSecondaryWriters != null, "PrimaryWriter.mSecondaryWriters != null");
+			PrimaryWriter.mSecondaryWriters!.Add(new WeakReference<LogWriter>(newWriter));
 			return newWriter;
 		}
 	}
@@ -434,7 +444,7 @@ public sealed class LogWriter
 
 		for (int i = mSecondaryWriters.Count - 1; i >= 0; i--)
 		{
-			if (mSecondaryWriters[i].TryGetTarget(out LogWriter writer))
+			if (mSecondaryWriters[i].TryGetTarget(out LogWriter? writer))
 			{
 				writer.Update(configuration);
 			}
@@ -457,7 +467,7 @@ public sealed class LogWriter
 
 		for (int i = mSecondaryWriters.Count - 1; i >= 0; i--)
 		{
-			if (!mSecondaryWriters[i].TryGetTarget(out LogWriter _))
+			if (!mSecondaryWriters[i].TryGetTarget(out LogWriter? _))
 			{
 				mSecondaryWriters.RemoveAt(i);
 			}
@@ -1084,7 +1094,7 @@ public sealed class LogWriter
 		args = modifiedArgs;
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, args);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1117,7 +1127,7 @@ public sealed class LogWriter
 		args = modifiedArgs;
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, args);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1141,10 +1151,10 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg = PrepareArgument(arg);
+		object? carg = PrepareArgument(arg);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1171,11 +1181,11 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg0, carg1);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1205,12 +1215,12 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg0, carg1, carg2);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1243,13 +1253,13 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
-		object carg3 = PrepareArgument(arg3);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
+		object? carg3 = PrepareArgument(arg3);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg0, carg1, carg2, carg3);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1285,14 +1295,14 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
-		object carg3 = PrepareArgument(arg3);
-		object carg4 = PrepareArgument(arg4);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
+		object? carg3 = PrepareArgument(arg3);
+		object? carg4 = PrepareArgument(arg4);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg0, carg1, carg2, carg3, carg4);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1331,15 +1341,15 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
-		object carg3 = PrepareArgument(arg3);
-		object carg4 = PrepareArgument(arg4);
-		object carg5 = PrepareArgument(arg5);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
+		object? carg3 = PrepareArgument(arg3);
+		object? carg4 = PrepareArgument(arg4);
+		object? carg5 = PrepareArgument(arg5);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg0, carg1, carg2, carg3, carg4, carg5);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1381,16 +1391,16 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
-		object carg3 = PrepareArgument(arg3);
-		object carg4 = PrepareArgument(arg4);
-		object carg5 = PrepareArgument(arg5);
-		object carg6 = PrepareArgument(arg6);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
+		object? carg3 = PrepareArgument(arg3);
+		object? carg4 = PrepareArgument(arg4);
+		object? carg5 = PrepareArgument(arg5);
+		object? carg6 = PrepareArgument(arg6);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg0, carg1, carg2, carg3, carg4, carg5, carg6);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1435,17 +1445,17 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
-		object carg3 = PrepareArgument(arg3);
-		object carg4 = PrepareArgument(arg4);
-		object carg5 = PrepareArgument(arg5);
-		object carg6 = PrepareArgument(arg6);
-		object carg7 = PrepareArgument(arg7);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
+		object? carg3 = PrepareArgument(arg3);
+		object? carg4 = PrepareArgument(arg4);
+		object? carg5 = PrepareArgument(arg5);
+		object? carg6 = PrepareArgument(arg6);
+		object? carg7 = PrepareArgument(arg7);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg0, carg1, carg2, carg3, carg4, carg5, carg6, carg7);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1493,18 +1503,18 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
-		object carg3 = PrepareArgument(arg3);
-		object carg4 = PrepareArgument(arg4);
-		object carg5 = PrepareArgument(arg5);
-		object carg6 = PrepareArgument(arg6);
-		object carg7 = PrepareArgument(arg7);
-		object carg8 = PrepareArgument(arg8);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
+		object? carg3 = PrepareArgument(arg3);
+		object? carg4 = PrepareArgument(arg4);
+		object? carg5 = PrepareArgument(arg5);
+		object? carg6 = PrepareArgument(arg6);
+		object? carg7 = PrepareArgument(arg7);
+		object? carg8 = PrepareArgument(arg8);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg0, carg1, carg2, carg3, carg4, carg5, carg6, carg7, carg8);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1555,19 +1565,19 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
-		object carg3 = PrepareArgument(arg3);
-		object carg4 = PrepareArgument(arg4);
-		object carg5 = PrepareArgument(arg5);
-		object carg6 = PrepareArgument(arg6);
-		object carg7 = PrepareArgument(arg7);
-		object carg8 = PrepareArgument(arg8);
-		object carg9 = PrepareArgument(arg9);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
+		object? carg3 = PrepareArgument(arg3);
+		object? carg4 = PrepareArgument(arg4);
+		object? carg5 = PrepareArgument(arg5);
+		object? carg6 = PrepareArgument(arg6);
+		object? carg7 = PrepareArgument(arg7);
+		object? carg8 = PrepareArgument(arg8);
+		object? carg9 = PrepareArgument(arg9);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg0, carg1, carg2, carg3, carg4, carg5, carg6, carg7, carg8, carg9);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1621,20 +1631,20 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
-		object carg3 = PrepareArgument(arg3);
-		object carg4 = PrepareArgument(arg4);
-		object carg5 = PrepareArgument(arg5);
-		object carg6 = PrepareArgument(arg6);
-		object carg7 = PrepareArgument(arg7);
-		object carg8 = PrepareArgument(arg8);
-		object carg9 = PrepareArgument(arg9);
-		object carg10 = PrepareArgument(arg10);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
+		object? carg3 = PrepareArgument(arg3);
+		object? carg4 = PrepareArgument(arg4);
+		object? carg5 = PrepareArgument(arg5);
+		object? carg6 = PrepareArgument(arg6);
+		object? carg7 = PrepareArgument(arg7);
+		object? carg8 = PrepareArgument(arg8);
+		object? carg9 = PrepareArgument(arg9);
+		object? carg10 = PrepareArgument(arg10);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg0, carg1, carg2, carg3, carg4, carg5, carg6, carg7, carg8, carg9, carg10);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1691,21 +1701,21 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
-		object carg3 = PrepareArgument(arg3);
-		object carg4 = PrepareArgument(arg4);
-		object carg5 = PrepareArgument(arg5);
-		object carg6 = PrepareArgument(arg6);
-		object carg7 = PrepareArgument(arg7);
-		object carg8 = PrepareArgument(arg8);
-		object carg9 = PrepareArgument(arg9);
-		object carg10 = PrepareArgument(arg10);
-		object carg11 = PrepareArgument(arg11);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
+		object? carg3 = PrepareArgument(arg3);
+		object? carg4 = PrepareArgument(arg4);
+		object? carg5 = PrepareArgument(arg5);
+		object? carg6 = PrepareArgument(arg6);
+		object? carg7 = PrepareArgument(arg7);
+		object? carg8 = PrepareArgument(arg8);
+		object? carg9 = PrepareArgument(arg9);
+		object? carg10 = PrepareArgument(arg10);
+		object? carg11 = PrepareArgument(arg11);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg0, carg1, carg2, carg3, carg4, carg5, carg6, carg7, carg8, carg9, carg10, carg11);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1765,22 +1775,22 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
-		object carg3 = PrepareArgument(arg3);
-		object carg4 = PrepareArgument(arg4);
-		object carg5 = PrepareArgument(arg5);
-		object carg6 = PrepareArgument(arg6);
-		object carg7 = PrepareArgument(arg7);
-		object carg8 = PrepareArgument(arg8);
-		object carg9 = PrepareArgument(arg9);
-		object carg10 = PrepareArgument(arg10);
-		object carg11 = PrepareArgument(arg11);
-		object carg12 = PrepareArgument(arg12);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
+		object? carg3 = PrepareArgument(arg3);
+		object? carg4 = PrepareArgument(arg4);
+		object? carg5 = PrepareArgument(arg5);
+		object? carg6 = PrepareArgument(arg6);
+		object? carg7 = PrepareArgument(arg7);
+		object? carg8 = PrepareArgument(arg8);
+		object? carg9 = PrepareArgument(arg9);
+		object? carg10 = PrepareArgument(arg10);
+		object? carg11 = PrepareArgument(arg11);
+		object? carg12 = PrepareArgument(arg12);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(provider, format, carg0, carg1, carg2, carg3, carg4, carg5, carg6, carg7, carg8, carg9, carg10, carg11, carg12);
 		OnLogMessageWritten(this, level, builder.ToString());
@@ -1843,23 +1853,23 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
-		object carg3 = PrepareArgument(arg3);
-		object carg4 = PrepareArgument(arg4);
-		object carg5 = PrepareArgument(arg5);
-		object carg6 = PrepareArgument(arg6);
-		object carg7 = PrepareArgument(arg7);
-		object carg8 = PrepareArgument(arg8);
-		object carg9 = PrepareArgument(arg9);
-		object carg10 = PrepareArgument(arg10);
-		object carg11 = PrepareArgument(arg11);
-		object carg12 = PrepareArgument(arg12);
-		object carg13 = PrepareArgument(arg13);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
+		object? carg3 = PrepareArgument(arg3);
+		object? carg4 = PrepareArgument(arg4);
+		object? carg5 = PrepareArgument(arg5);
+		object? carg6 = PrepareArgument(arg6);
+		object? carg7 = PrepareArgument(arg7);
+		object? carg8 = PrepareArgument(arg8);
+		object? carg9 = PrepareArgument(arg9);
+		object? carg10 = PrepareArgument(arg10);
+		object? carg11 = PrepareArgument(arg11);
+		object? carg12 = PrepareArgument(arg12);
+		object? carg13 = PrepareArgument(arg13);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(
 			provider,
@@ -1941,24 +1951,24 @@ public sealed class LogWriter
 			return;
 
 		// unwrap exceptions to ensure inner exceptions are logged as well
-		object carg0 = PrepareArgument(arg0);
-		object carg1 = PrepareArgument(arg1);
-		object carg2 = PrepareArgument(arg2);
-		object carg3 = PrepareArgument(arg3);
-		object carg4 = PrepareArgument(arg4);
-		object carg5 = PrepareArgument(arg5);
-		object carg6 = PrepareArgument(arg6);
-		object carg7 = PrepareArgument(arg7);
-		object carg8 = PrepareArgument(arg8);
-		object carg9 = PrepareArgument(arg9);
-		object carg10 = PrepareArgument(arg10);
-		object carg11 = PrepareArgument(arg11);
-		object carg12 = PrepareArgument(arg12);
-		object carg13 = PrepareArgument(arg13);
-		object carg14 = PrepareArgument(arg14);
+		object? carg0 = PrepareArgument(arg0);
+		object? carg1 = PrepareArgument(arg1);
+		object? carg2 = PrepareArgument(arg2);
+		object? carg3 = PrepareArgument(arg3);
+		object? carg4 = PrepareArgument(arg4);
+		object? carg5 = PrepareArgument(arg5);
+		object? carg6 = PrepareArgument(arg6);
+		object? carg7 = PrepareArgument(arg7);
+		object? carg8 = PrepareArgument(arg8);
+		object? carg9 = PrepareArgument(arg9);
+		object? carg10 = PrepareArgument(arg10);
+		object? carg11 = PrepareArgument(arg11);
+		object? carg12 = PrepareArgument(arg12);
+		object? carg13 = PrepareArgument(arg13);
+		object? carg14 = PrepareArgument(arg14);
 
 		// format message and raise the event to notify clients of the written message
-		StringBuilder builder = sBuilder.Value;
+		StringBuilder builder = sBuilder.Value!;
 		builder.Clear();
 		builder.AppendFormat(
 			provider,
@@ -1988,7 +1998,7 @@ public sealed class LogWriter
 	/// <param name="arg">Argument to prepare.</param>
 	/// <returns>Object to feed into the logging subsystem.</returns>
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private static object PrepareArgument<T>(T arg)
+	private static object? PrepareArgument<T>(T arg)
 	{
 		if (arg is Exception exception) return UnwrapException(exception);
 		return arg;
@@ -2037,7 +2047,7 @@ public sealed class LogWriter
 				// single-line message
 				AppendIndentation(builder, indent);
 				builder.Append("--- Message: ");
-				builder.AppendLine(lines.Length > 0 ? lines[0]: "");
+				builder.AppendLine(lines.Length > 0 ? lines[0] : "");
 			}
 
 			// stack trace
@@ -2065,6 +2075,7 @@ public sealed class LogWriter
 			else if (exception.InnerException != null)
 			{
 				builder.AppendLine();
+				// ReSharper disable once TailRecursiveCall
 				Build(builder, exception.InnerException, indent: indent + 1);
 			}
 		}
@@ -2092,7 +2103,7 @@ public sealed class LogWriter
 	private static void OnNewLogWriterRegistered(LogWriter writer)
 	{
 		Debug.Assert(Monitor.IsEntered(LogGlobals.Sync));
-		LogWriterRegisteredEventHandler handler = NewLogWriterRegistered;
+		LogWriterRegisteredEventHandler? handler = NewLogWriterRegistered;
 		handler?.Invoke(writer);
 	}
 
@@ -2104,7 +2115,7 @@ public sealed class LogWriter
 	private static void OnNewLogWriterTagRegistered(LogWriterTag tag)
 	{
 		Debug.Assert(Monitor.IsEntered(LogGlobals.Sync));
-		LogWriterTagRegisteredEventHandler handler = NewLogWriterTagRegistered;
+		LogWriterTagRegisteredEventHandler? handler = NewLogWriterTagRegistered;
 		handler?.Invoke(tag);
 	}
 
@@ -2118,7 +2129,7 @@ public sealed class LogWriter
 	private static void OnLogMessageWritten(LogWriter writer, LogLevel level, string message)
 	{
 		Debug.Assert(!Monitor.IsEntered(LogGlobals.Sync));
-		LogMessageWrittenEventHandler handler = LogMessageWritten;
+		LogMessageWrittenEventHandler? handler = LogMessageWritten;
 		handler?.Invoke(writer, level, message);
 	}
 }

@@ -138,7 +138,7 @@ public class LogLevelBitMaskTests
 	/// <summary>
 	/// Test data for testing the equality of masks.
 	/// </summary>
-	public static IEnumerable<object[]> EqualityTestData
+	public static IEnumerable<object?[]> EqualityTestData
 	{
 		get
 		{
@@ -295,8 +295,8 @@ public class LogLevelBitMaskTests
 	/// <param name="mask1">Mask 1 to compare.</param>
 	/// <param name="mask2">Mask 1 to compare.</param>
 	/// <param name="expected">
-	/// <c>true</c> if both masks are expected to be equal;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/> if both masks are expected to be equal;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </param>
 	[Theory]
 	[MemberData(nameof(EqualityTestData))]
@@ -306,8 +306,8 @@ public class LogLevelBitMaskTests
 		string mask2,
 		bool   expected)
 	{
-		LogLevelBitMask bitmask1 = MaskFromString(mask1, false, padding);
-		LogLevelBitMask bitmask2 = MaskFromString(mask2, false, padding);
+		LogLevelBitMask? bitmask1 = MaskFromString(mask1, false, padding);
+		LogLevelBitMask? bitmask2 = MaskFromString(mask2, false, padding);
 		Assert.Equal(expected, bitmask1 == bitmask2);
 	}
 
@@ -322,8 +322,8 @@ public class LogLevelBitMaskTests
 	/// <param name="mask1">Mask 1 to compare.</param>
 	/// <param name="mask2">Mask 1 to compare.</param>
 	/// <param name="expected">
-	/// <c>true</c> if both masks are expected to be equal;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/> if both masks are expected to be equal;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </param>
 	[Theory]
 	[MemberData(nameof(EqualityTestData))]
@@ -333,8 +333,8 @@ public class LogLevelBitMaskTests
 		string mask2,
 		bool   expected)
 	{
-		LogLevelBitMask bitmask1 = MaskFromString(mask1, false, padding);
-		LogLevelBitMask bitmask2 = MaskFromString(mask2, false, padding);
+		LogLevelBitMask? bitmask1 = MaskFromString(mask1, false, padding);
+		LogLevelBitMask? bitmask2 = MaskFromString(mask2, false, padding);
 		Assert.Equal(!expected, bitmask1 != bitmask2);
 	}
 
@@ -393,7 +393,7 @@ public class LogLevelBitMaskTests
 		string expected)
 	{
 		// create the bitmask to test with
-		LogLevelBitMask bitmask = MaskFromString(mask, false, false);
+		LogLevelBitMask bitmask = MaskFromString(mask, false, false)!;
 
 		// calculate the complement of the bitmask
 		LogLevelBitMask complement = ~bitmask;
@@ -469,7 +469,7 @@ public class LogLevelBitMaskTests
 			yield return
 			[
 				true,                                                               // padding
-				"1111111111110000000000000000000010101010101010101010101010101010", // mask 1 
+				"1111111111110000000000000000000010101010101010101010101010101010", // mask 1
 				"00000000000000000000111111111111",                                 // mask 2 (expanded with padding 1)
 				"1111111111110000000011111111111111111111111111111111111111111111"  // resulting mask
 			];
@@ -489,8 +489,8 @@ public class LogLevelBitMaskTests
 	/// Tests the <see cref="LogLevelBitMask.op_BitwiseOr"/> operator.
 	/// </summary>
 	/// <param name="padding">
-	/// <c>true</c> to pad shorter masks with '1';<br/>
-	/// <c>false</c> to pad them with '0'.
+	/// <see langword="true"/> to pad shorter masks with '1';<br/>
+	/// <see langword="false"/> to pad them with '0'.
 	/// </param>
 	/// <param name="mask1">Mask 1 to test with.</param>
 	/// <param name="mask2">Mask 2 to test with.</param>
@@ -504,11 +504,11 @@ public class LogLevelBitMaskTests
 		string expected)
 	{
 		// prepare masks
-		LogLevelBitMask bitmask1 = MaskFromString(mask1, false, padding);
-		LogLevelBitMask bitmask2 = MaskFromString(mask2, false, padding);
+		LogLevelBitMask? bitmask1 = MaskFromString(mask1, false, padding);
+		LogLevelBitMask? bitmask2 = MaskFromString(mask2, false, padding);
 
 		// calculate the bitwise OR of the masks
-		LogLevelBitMask resultingBitmask = bitmask1 | bitmask2;
+		LogLevelBitMask resultingBitmask = bitmask1! | bitmask2!;
 
 		// check the resulting mask
 		string resultingBitmaskAsString = "";
@@ -517,7 +517,7 @@ public class LogLevelBitMaskTests
 	}
 
 	/// <summary>
-	/// Tests the <see cref="LogLevelBitMask.op_BitwiseOr"/> operator passing <c>null</c>.
+	/// Tests the <see cref="LogLevelBitMask.op_BitwiseOr"/> operator passing <see langword="null"/>.
 	/// The operator should throw an <see cref="ArgumentNullException"/> in this case.
 	/// </summary>
 	[Fact]
@@ -525,10 +525,10 @@ public class LogLevelBitMaskTests
 	public void Operator_BitwiseOr_ArgumentNull()
 	{
 		var bitmask1 = new LogLevelBitMask(32, false, false);
-		LogLevelBitMask bitmask2 = null;
-		var exception1 = Assert.Throws<ArgumentNullException>(() => bitmask1 | bitmask2);
+		LogLevelBitMask? bitmask2 = null;
+		var exception1 = Assert.Throws<ArgumentNullException>(() => bitmask1 | bitmask2!);
 		Assert.Equal("mask2", exception1.ParamName);
-		var exception2 = Assert.Throws<ArgumentNullException>(() => bitmask2 | bitmask1);
+		var exception2 = Assert.Throws<ArgumentNullException>(() => bitmask2! | bitmask1);
 		Assert.Equal("mask1", exception2.ParamName);
 	}
 
@@ -617,8 +617,8 @@ public class LogLevelBitMaskTests
 	/// Tests the <see cref="LogLevelBitMask.op_BitwiseAnd"/> operator.
 	/// </summary>
 	/// <param name="padding">
-	/// <c>true</c> to pad shorter masks with '1';<br/>
-	/// <c>false</c> to pad them with '0'.
+	/// <see langword="true"/> to pad shorter masks with '1';<br/>
+	/// <see langword="false"/> to pad them with '0'.
 	/// </param>
 	/// <param name="mask1">Mask 1 to test with.</param>
 	/// <param name="mask2">Mask 2 to test with.</param>
@@ -632,8 +632,8 @@ public class LogLevelBitMaskTests
 		string expected)
 	{
 		// prepare masks
-		LogLevelBitMask bitmask1 = MaskFromString(mask1, false, padding);
-		LogLevelBitMask bitmask2 = MaskFromString(mask2, false, padding);
+		LogLevelBitMask bitmask1 = MaskFromString(mask1, false, padding)!;
+		LogLevelBitMask bitmask2 = MaskFromString(mask2, false, padding)!;
 
 		// calculate the bitwise AND of the masks
 		LogLevelBitMask resultingBitmask = bitmask1 & bitmask2;
@@ -645,7 +645,7 @@ public class LogLevelBitMaskTests
 	}
 
 	/// <summary>
-	/// Tests the <see cref="LogLevelBitMask.op_BitwiseAnd"/> operator passing <c>null</c>.
+	/// Tests the <see cref="LogLevelBitMask.op_BitwiseAnd"/> operator passing <see langword="null"/>.
 	/// The operator should throw an <see cref="ArgumentNullException"/> in this case.
 	/// </summary>
 	[Fact]
@@ -653,10 +653,10 @@ public class LogLevelBitMaskTests
 	public void Operator_BitwiseAnd_ArgumentNull()
 	{
 		var bitmask1 = new LogLevelBitMask(32, false, false);
-		LogLevelBitMask bitmask2 = null;
-		var exception1 = Assert.Throws<ArgumentNullException>(() => bitmask1 & bitmask2);
+		LogLevelBitMask? bitmask2 = null;
+		var exception1 = Assert.Throws<ArgumentNullException>(() => bitmask1 & bitmask2!);
 		Assert.Equal("mask2", exception1.ParamName);
-		var exception2 = Assert.Throws<ArgumentNullException>(() => bitmask2 & bitmask1);
+		var exception2 = Assert.Throws<ArgumentNullException>(() => bitmask2! & bitmask1);
 		Assert.Equal("mask1", exception2.ParamName);
 	}
 
@@ -745,8 +745,8 @@ public class LogLevelBitMaskTests
 	/// Tests the <see cref="LogLevelBitMask.op_ExclusiveOr "/> operator.
 	/// </summary>
 	/// <param name="padding">
-	/// <c>true</c> to pad shorter masks with '1';<br/>
-	/// <c>false</c> to pad them with '0'.
+	/// <see langword="true"/> to pad shorter masks with '1';<br/>
+	/// <see langword="false"/> to pad them with '0'.
 	/// </param>
 	/// <param name="mask1">Mask 1 to test with.</param>
 	/// <param name="mask2">Mask 2 to test with.</param>
@@ -760,8 +760,8 @@ public class LogLevelBitMaskTests
 		string expected)
 	{
 		// prepare masks
-		LogLevelBitMask bitmask1 = MaskFromString(mask1, false, padding);
-		LogLevelBitMask bitmask2 = MaskFromString(mask2, false, padding);
+		LogLevelBitMask bitmask1 = MaskFromString(mask1, false, padding)!;
+		LogLevelBitMask bitmask2 = MaskFromString(mask2, false, padding)!;
 
 		// calculate the bitwise XOR of the masks
 		LogLevelBitMask resultingBitmask = bitmask1 ^ bitmask2;
@@ -773,7 +773,7 @@ public class LogLevelBitMaskTests
 	}
 
 	/// <summary>
-	/// Tests the <see cref="LogLevelBitMask.op_ExclusiveOr"/> operator passing <c>null</c>.
+	/// Tests the <see cref="LogLevelBitMask.op_ExclusiveOr"/> operator passing <see langword="null"/>.
 	/// The operator should throw an <see cref="ArgumentNullException"/> in this case.
 	/// </summary>
 	[Fact]
@@ -781,10 +781,10 @@ public class LogLevelBitMaskTests
 	public void Operator_BitwiseXor_ArgumentNull()
 	{
 		var bitmask1 = new LogLevelBitMask(32, false, false);
-		LogLevelBitMask bitmask2 = null;
-		var exception1 = Assert.Throws<ArgumentNullException>(() => bitmask1 ^ bitmask2);
+		LogLevelBitMask? bitmask2 = null;
+		var exception1 = Assert.Throws<ArgumentNullException>(() => bitmask1 ^ bitmask2!);
 		Assert.Equal("mask2", exception1.ParamName);
-		var exception2 = Assert.Throws<ArgumentNullException>(() => bitmask2 ^ bitmask1);
+		var exception2 = Assert.Throws<ArgumentNullException>(() => bitmask2! ^ bitmask1);
 		Assert.Equal("mask1", exception2.ParamName);
 	}
 
@@ -1302,7 +1302,7 @@ public class LogLevelBitMaskTests
 	public void GetHashCode(string mask, int expected)
 #pragma warning restore xUnit1024 // Test methods cannot have overloads
 	{
-		LogLevelBitMask bitmask = MaskFromString(mask);
+		LogLevelBitMask bitmask = MaskFromString(mask)!;
 		Assert.Equal(expected, bitmask.GetHashCode());
 	}
 
@@ -1314,30 +1314,30 @@ public class LogLevelBitMaskTests
 	/// Tests the <see cref="LogLevelBitMask.Equals(object)"/> method.
 	/// </summary>
 	/// <param name="padding">
-	/// <c>true</c> to pad shorter masks with '1';<br/>
-	/// <c>false</c> to pad them with '0'.
+	/// <see langword="true"/> to pad shorter masks with '1';<br/>
+	/// <see langword="false"/> to pad them with '0'.
 	/// </param>
 	/// <param name="mask1">Mask 1 to compare.</param>
 	/// <param name="mask2">Mask 2 to compare.</param>
 	/// <param name="expected">
-	/// <c>true</c> if the masks are expected to be equal;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/> if the masks are expected to be equal;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </param>
 	[Theory]
 	[MemberData(nameof(EqualityTestData))]
 #pragma warning disable xUnit1024 // Test methods cannot have overloads
 	public void Equals(
-		bool   padding,
-		string mask1,
-		string mask2,
-		bool   expected)
+		bool    padding,
+		string? mask1,
+		string? mask2,
+		bool    expected)
 #pragma warning restore xUnit1024 // Test methods cannot have overloads
 	{
-		// mask must not be null as this tests the Equals() method of the instance 
+		// mask must not be null as this tests the Equals() method of the instance
 		if (mask1 == null) return;
 
-		LogLevelBitMask bitmask1 = MaskFromString(mask1, false, padding);
-		LogLevelBitMask bitmask2 = MaskFromString(mask2, false, padding);
+		LogLevelBitMask bitmask1 = MaskFromString(mask1, false, padding)!;
+		LogLevelBitMask bitmask2 = MaskFromString(mask2, false, padding)!;
 		Assert.Equal(expected, bitmask1.Equals(bitmask2));
 	}
 
@@ -1348,18 +1348,18 @@ public class LogLevelBitMaskTests
 	/// <summary>
 	/// Converts a string containing only '0' and '1' characters to the corresponding <see cref="LogLevelBitMask"/>.
 	/// </summary>
-	/// <param name="mask">The bitmask as a string (may bew <c>null</c> to simply return <c>null</c>).</param>
+	/// <param name="mask">The bitmask as a string (may be <see langword="null"/> to simply return <see langword="null"/>).</param>
 	/// <param name="set">
-	/// <c>false</c> to initialize the bitmask with '0' before setting/clearing bits explicitly.<br/>
-	/// <c>true</c> to initialize the bitmask with '1' before setting/clearing bits explicitly.<br/>
+	/// <see langword="false"/> to initialize the bitmask with '0' before setting/clearing bits explicitly.<br/>
+	/// <see langword="true"/> to initialize the bitmask with '1' before setting/clearing bits explicitly.<br/>
 	/// This only makes a difference, if <paramref name="mask"/> is not a multiple of 32.
 	/// </param>
 	/// <param name="padding">
-	/// <c>true</c> to pad the bitmask with '1' when working with it;<br/>
-	/// <c>false</c> to pad the bitmask with '0'.
+	/// <see langword="true"/> to pad the bitmask with '1' when working with it;<br/>
+	/// <see langword="false"/> to pad the bitmask with '0'.
 	/// </param>
 	/// <returns>The corresponding <see cref="LogLevelBitMask"/>.</returns>
-	private static LogLevelBitMask MaskFromString(string mask, bool set = false, bool padding = false)
+	private static LogLevelBitMask? MaskFromString(string? mask, bool set = false, bool padding = false)
 	{
 		if (mask == null) return null;
 

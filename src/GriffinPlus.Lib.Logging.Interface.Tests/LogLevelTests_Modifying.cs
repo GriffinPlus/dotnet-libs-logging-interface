@@ -23,7 +23,7 @@ public class LogLevelTests_Modifying
 	[Fact]
 	public void GetAspect()
 	{
-		LogLevel eventLogLevel = null;
+		LogLevel? eventLogLevel = null;
 
 		try
 		{

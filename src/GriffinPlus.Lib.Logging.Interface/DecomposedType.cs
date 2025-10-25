@@ -7,6 +7,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+// ReSharper disable LoopCanBeConvertedToQuery
+
 namespace GriffinPlus.Lib.Logging;
 
 /// <summary>
@@ -23,7 +25,7 @@ sealed class DecomposedType : IEquatable<DecomposedType>
 	/// The list of generic type arguments, if <paramref name="type"/> is a generic type definition.
 	/// </param>
 	/// <exception cref="ArgumentNullException">
-	/// <paramref name="composedType"/>, <paramref name="type"/> or <paramref name="genericTypeArguments"/> is <c>null</c>.
+	/// <paramref name="composedType"/>, <paramref name="type"/> or <paramref name="genericTypeArguments"/> is <see langword="null"/>.
 	/// </exception>
 	internal DecomposedType(
 		Type                        composedType,
@@ -63,10 +65,10 @@ sealed class DecomposedType : IEquatable<DecomposedType>
 	/// </summary>
 	/// <param name="other">The <see cref="DecomposedType"/> to compare with.</param>
 	/// <returns>
-	/// <c>true</c> if the current <see cref="DecomposedType"/> equals the specified one;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/> if the current <see cref="DecomposedType"/> equals the specified one;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
-	public bool Equals(DecomposedType other)
+	public bool Equals(DecomposedType? other)
 	{
 		if (ReferenceEquals(null, other))
 			return false;
@@ -84,10 +86,10 @@ sealed class DecomposedType : IEquatable<DecomposedType>
 	/// </summary>
 	/// <param name="obj">The object to compare with.</param>
 	/// <returns>
-	/// <c>true</c> if the current <see cref="DecomposedType"/> equals the specified object;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/> if the current <see cref="DecomposedType"/> equals the specified object;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
-	public override bool Equals(object obj)
+	public override bool Equals(object? obj)
 	{
 		return ReferenceEquals(this, obj) || (obj is DecomposedType other && Equals(other));
 	}

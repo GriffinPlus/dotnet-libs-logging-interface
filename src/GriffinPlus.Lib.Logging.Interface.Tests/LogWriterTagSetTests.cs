@@ -9,6 +9,8 @@ using System.Linq;
 
 using Xunit;
 
+// ReSharper disable LoopCanBeConvertedToQuery
+
 namespace GriffinPlus.Lib.Logging;
 
 /// <summary>
@@ -74,7 +76,7 @@ public class LogWriterTagSetTests
 	[Fact]
 	public void Create_TagsIsNull()
 	{
-		Assert.Throws<ArgumentNullException>(() => new LogWriterTagSet(null));
+		Assert.Throws<ArgumentNullException>(() => new LogWriterTagSet(null!));
 	}
 
 	#endregion
@@ -131,7 +133,7 @@ public class LogWriterTagSetTests
 
 	#region Operator==
 
-	public static IEnumerable<object[]> OperatorEquality_TestData
+	public static IEnumerable<object?[]> OperatorEquality_TestData
 	{
 		get
 		{
@@ -170,13 +172,13 @@ public class LogWriterTagSetTests
 
 	#region Operator!=
 
-	public static IEnumerable<object[]> OperatorInequality_TestData
+	public static IEnumerable<object?[]> OperatorInequality_TestData
 	{
 		get
 		{
-			foreach (object[] data in OperatorEquality_TestData)
+			foreach (object?[] data in OperatorEquality_TestData)
 			{
-				yield return [!(bool)data[0], data[1], data[2]];
+				yield return [!(bool)data[0]!, data[1], data[2]];
 			}
 		}
 	}

@@ -18,13 +18,13 @@ public static class FailFast
 	/// Occurs when the <see cref="TerminateApplication(string)"/> method is called.<br/>
 	/// The GriffinPlus.Lib.Logging package hooks up to this event to flush all log writers before the application is terminated.
 	/// </summary>
-	internal static event Action<string> TerminationRequestedWithMessage;
+	internal static event Action<string>? TerminationRequestedWithMessage;
 
 	/// <summary>
 	/// Occurs when the <see cref="TerminateApplication(Exception)"/> method is called.<br/>
 	/// The GriffinPlus.Lib.Logging package hooks up to this event to flush all log writers before the application is terminated.
 	/// </summary>
-	internal static event Action<Exception> TerminationRequestedWithException;
+	internal static event Action<Exception>? TerminationRequestedWithException;
 
 	/// <summary>
 	/// Requests terminating the application specifying a message describing the reason that led to this incident.<br/>
@@ -36,7 +36,7 @@ public static class FailFast
 		// global logging lock should not be held here...
 		Debug.Assert(!Monitor.IsEntered(LogGlobals.Sync));
 
-		Action<string> handler = TerminationRequestedWithMessage;
+		Action<string>? handler = TerminationRequestedWithMessage;
 
 		if (handler == null)
 		{
@@ -58,7 +58,7 @@ public static class FailFast
 		// global logging lock should not be held here...
 		Debug.Assert(!Monitor.IsEntered(LogGlobals.Sync));
 
-		Action<Exception> handler = TerminationRequestedWithException;
+		Action<Exception>? handler = TerminationRequestedWithException;
 
 		if (handler == null)
 		{

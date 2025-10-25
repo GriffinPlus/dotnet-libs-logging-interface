@@ -49,12 +49,12 @@ public class LogWriterTests_Configuration
 	}
 
 	/// <summary>
-	/// Tests the <see cref="LogWriter.UpdateLogWriters"/> method passing <c>null</c> as configuration.
+	/// Tests the <see cref="LogWriter.UpdateLogWriters"/> method passing <see langword="null"/> as configuration.
 	/// The method should throw a <see cref="ArgumentNullException"/> in this case.
 	/// </summary>
 	[Fact]
 	public void UpdateLogWriters_ConfigurationIsNull()
 	{
-		Assert.Throws<ArgumentNullException>(() => LogWriter.UpdateLogWriters(null));
+		Assert.Throws<ArgumentNullException>(() => LogWriter.UpdateLogWriters(null!));
 	}
 }

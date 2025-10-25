@@ -8,8 +8,10 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
+// ReSharper disable LoopCanBeConvertedToQuery
 // ReSharper disable UnusedMember.Global
 // ReSharper disable PossibleMultipleEnumeration
+
 
 namespace GriffinPlus.Lib.Logging;
 
@@ -53,7 +55,7 @@ public sealed class LogWriterTagSet : ITagSet, IReadOnlyList<LogWriterTag>, IEqu
 		/// 1, if <paramref name="x"/> is greater than <paramref name="y"/>;
 		/// 0, if both tags are equal.
 		/// </returns>
-		public int Compare(LogWriterTag x, LogWriterTag y)
+		public int Compare(LogWriterTag? x, LogWriterTag? y)
 		{
 			if (ReferenceEquals(x, y)) return 0;
 			if (ReferenceEquals(null, y)) return 1;
@@ -67,10 +69,10 @@ public sealed class LogWriterTagSet : ITagSet, IReadOnlyList<LogWriterTag>, IEqu
 		/// <param name="x">Tag to compare.</param>
 		/// <param name="y">Tag to compare with.</param>
 		/// <returns>
-		/// <c>true</c> if both tags are equal;<br/>
-		/// otherwise <c>false</c>.
+		/// <see langword="true"/> if both tags are equal;<br/>
+		/// otherwise, <see langword="false"/>.
 		/// </returns>
-		public bool Equals(LogWriterTag x, LogWriterTag y)
+		public bool Equals(LogWriterTag? x, LogWriterTag? y)
 		{
 			if (ReferenceEquals(x, y)) return true;
 			if (ReferenceEquals(x, null)) return false;
@@ -85,7 +87,7 @@ public sealed class LogWriterTagSet : ITagSet, IReadOnlyList<LogWriterTag>, IEqu
 		/// <returns>Hash code of the tag.</returns>
 		public int GetHashCode(LogWriterTag tag)
 		{
-			return tag.Name != null ? tag.Name.GetHashCode() : 0;
+			return tag.Name.GetHashCode();
 		}
 	}
 
@@ -160,10 +162,10 @@ public sealed class LogWriterTagSet : ITagSet, IReadOnlyList<LogWriterTag>, IEqu
 	/// <param name="left">Left tag set.</param>
 	/// <param name="right">Right tag set.</param>
 	/// <returns>
-	/// <c>true</c>, if the specified tag sets are equal;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/>, if the specified tag sets are equal;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
-	public static bool operator ==(LogWriterTagSet left, ITagSet right)
+	public static bool operator ==(LogWriterTagSet? left, ITagSet? right)
 	{
 		if (ReferenceEquals(left, null) && ReferenceEquals(right, null)) return true;
 		return !ReferenceEquals(left, null) && left.Equals(right);
@@ -175,10 +177,10 @@ public sealed class LogWriterTagSet : ITagSet, IReadOnlyList<LogWriterTag>, IEqu
 	/// <param name="left">Left tag set.</param>
 	/// <param name="right">Right tag set.</param>
 	/// <returns>
-	/// <c>true</c>, if the specified tag sets are not equal;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/>, if the specified tag sets are not equal;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
-	public static bool operator !=(LogWriterTagSet left, ITagSet right)
+	public static bool operator !=(LogWriterTagSet? left, ITagSet? right)
 	{
 		if (ReferenceEquals(left, null) && ReferenceEquals(right, null)) return false;
 		if (ReferenceEquals(left, null)) return true;
@@ -200,6 +202,7 @@ public sealed class LogWriterTagSet : ITagSet, IReadOnlyList<LogWriterTag>, IEqu
 	/// <returns>An enumerator iterating over the tags.</returns>
 	IEnumerator<string> IEnumerable<string>.GetEnumerator()
 	{
+		// ReSharper disable once ForeachCanBeConvertedToQueryUsingAnotherGetEnumerator
 		foreach (LogWriterTag tag in mTags)
 		{
 			yield return tag.Name;
@@ -220,10 +223,10 @@ public sealed class LogWriterTagSet : ITagSet, IReadOnlyList<LogWriterTag>, IEqu
 	/// </summary>
 	/// <param name="other">Tag set to compare with.</param>
 	/// <returns>
-	/// <c>true</c>, if the specified tag set equals the current one;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/>, if the specified tag set equals the current one;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
-	public bool Equals(LogWriterTagSet other)
+	public bool Equals(LogWriterTagSet? other)
 	{
 		return other != null && mTags.SequenceEqual(other.mTags, sOrdinalComparer);
 	}
@@ -233,10 +236,10 @@ public sealed class LogWriterTagSet : ITagSet, IReadOnlyList<LogWriterTag>, IEqu
 	/// </summary>
 	/// <param name="other">Tag set to compare with.</param>
 	/// <returns>
-	/// <c>true</c>, if the specified tag set equals the current one;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/>, if the specified tag set equals the current one;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
-	public bool Equals(ITagSet other)
+	public bool Equals(ITagSet? other)
 	{
 		if (other == null) return false;
 		if (other is LogWriterTagSet set) return Equals(set);
@@ -250,10 +253,10 @@ public sealed class LogWriterTagSet : ITagSet, IReadOnlyList<LogWriterTag>, IEqu
 	/// </summary>
 	/// <param name="obj">Tag set to compare with.</param>
 	/// <returns>
-	/// <c>true</c>, if the specified tag set equals the current one;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/>, if the specified tag set equals the current one;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
-	public override bool Equals(object obj)
+	public override bool Equals(object? obj)
 	{
 		return ReferenceEquals(this, obj) || (obj is ITagSet other && Equals(other));
 	}

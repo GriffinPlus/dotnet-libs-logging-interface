@@ -9,6 +9,8 @@ using System.Linq;
 
 using Xunit;
 
+// ReSharper disable CanSimplifyStringEscapeSequence
+
 namespace GriffinPlus.Lib.Logging;
 
 /// <summary>
@@ -27,29 +29,29 @@ public class LogLevelTests
 
 	private static readonly LogLevelItem[] sExpectedPredefinedLogLevels =
 	[
-		new LogLevelItem(0, "Emergency"),
-		new LogLevelItem(1, "Alert"),
-		new LogLevelItem(2, "Critical"),
-		new LogLevelItem(3, "Error"),
-		new LogLevelItem(4, "Warning"),
-		new LogLevelItem(5, "Notice"),
-		new LogLevelItem(6, "Informational"),
-		new LogLevelItem(7, "Debug"),
-		new LogLevelItem(8, "Trace")
+		new(0, "Emergency"),
+		new(1, "Alert"),
+		new(2, "Critical"),
+		new(3, "Error"),
+		new(4, "Warning"),
+		new(5, "Notice"),
+		new(6, "Informational"),
+		new(7, "Debug"),
+		new(8, "Trace")
 	];
 
 	private static readonly LogLevelItem[] sExpectedKnownLogLevels =
 	[
-		new LogLevelItem(0, "Emergency"),
-		new LogLevelItem(1, "Alert"),
-		new LogLevelItem(2, "Critical"),
-		new LogLevelItem(3, "Error"),
-		new LogLevelItem(4, "Warning"),
-		new LogLevelItem(5, "Notice"),
-		new LogLevelItem(6, "Informational"),
-		new LogLevelItem(7, "Debug"),
-		new LogLevelItem(8, "Trace"),
-		new LogLevelItem(9, "Timing")
+		new(0, "Emergency"),
+		new(1, "Alert"),
+		new(2, "Critical"),
+		new(3, "Error"),
+		new(4, "Warning"),
+		new(5, "Notice"),
+		new(6, "Informational"),
+		new(7, "Debug"),
+		new(8, "Trace"),
+		new(9, "Timing")
 	];
 
 	#endregion
@@ -340,8 +342,8 @@ public class LogLevelTests
 	/// </summary>
 	/// <param name="name">Name to check.</param>
 	/// <param name="ok">
-	/// <c>true</c> if the name is valid;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/> if the name is valid;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </param>
 	[Theory]
 	[InlineData("A", true)]         // a letter
@@ -361,18 +363,18 @@ public class LogLevelTests
 		}
 		else
 		{
-			var exception = Assert.Throws<ArgumentException>(() => LogLevel.CheckName(name));
+			Assert.Throws<ArgumentException>(() => LogLevel.CheckName(name));
 		}
 	}
 
 	/// <summary>
-	/// Tests the <see cref="LogLevel.CheckName"/> method passing <c>null</c>.
+	/// Tests the <see cref="LogLevel.CheckName"/> method passing <see langword="null"/>.
 	/// The method should throw an <see cref="ArgumentNullException"/> in this case.
 	/// </summary>
 	[Fact]
 	public void CheckName_NameIsNull()
 	{
-		var exception = Assert.Throws<ArgumentNullException>(() => LogLevel.CheckName(null));
+		var exception = Assert.Throws<ArgumentNullException>(() => LogLevel.CheckName(null!));
 		Assert.Equal("name", exception.ParamName);
 	}
 

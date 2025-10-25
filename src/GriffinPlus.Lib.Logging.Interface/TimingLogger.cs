@@ -24,8 +24,8 @@ public class TimingLogger : IDisposable
 	private                 long                        mTimestamp;
 	private                 LogWriter                   mLogWriter;
 	private                 LogLevel                    mLogLevel;
-	private                 string                      mOperation;
-	private                 string                      mThreadName;
+	private                 string?                     mOperation;
+	private                 string?                     mThreadName;
 	private                 int                         mTimingLoggerId;
 	private                 int                         mManagedThreadId;
 	private                 bool                        mActive;
@@ -33,7 +33,12 @@ public class TimingLogger : IDisposable
 	/// <summary>
 	/// Initializes a new instance of the <see cref="TimingLogger"/> class.
 	/// </summary>
-	private TimingLogger() { }
+	private TimingLogger()
+	{
+		// initialized in Measure method
+		mLogWriter = null!;
+		mLogLevel = null!;
+	}
 
 	/// <summary>
 	/// Disposes the timing logger emitting a log message that notifies about the time since the timing logger was created.
@@ -51,9 +56,9 @@ public class TimingLogger : IDisposable
 	/// Gets a timing logger using the default log writer 'Timing' and the default log level 'Timing'.
 	/// </summary>
 	/// <param name="operation">Name of the operation that is being measured.</param>
-	public static TimingLogger Measure(string operation = null)
+	public static TimingLogger Measure(string? operation = null)
 	{
-		if (!sPool.TryTake(out TimingLogger logger)) logger = new TimingLogger();
+		if (!sPool.TryTake(out TimingLogger? logger)) logger = new TimingLogger();
 		logger.mLogWriter = sDefaultLogWriter;
 		logger.mLogLevel = sDefaultLogLevel;
 		logger.mOperation = operation;
@@ -71,9 +76,9 @@ public class TimingLogger : IDisposable
 	/// </summary>
 	/// <param name="level">Log level to use.</param>
 	/// <param name="operation">Name of the operation that is being measured.</param>
-	public static TimingLogger Measure(LogLevel level, string operation = null)
+	public static TimingLogger Measure(LogLevel level, string? operation = null)
 	{
-		if (!sPool.TryTake(out TimingLogger logger)) logger = new TimingLogger();
+		if (!sPool.TryTake(out TimingLogger? logger)) logger = new TimingLogger();
 		logger.mLogWriter = sDefaultLogWriter;
 		logger.mLogLevel = level;
 		logger.mOperation = operation;
@@ -91,9 +96,9 @@ public class TimingLogger : IDisposable
 	/// </summary>
 	/// <param name="writer">Log writer to use.</param>
 	/// <param name="operation">Name of the operation that is being measured.</param>
-	public static TimingLogger Measure(LogWriter writer, string operation = null)
+	public static TimingLogger Measure(LogWriter writer, string? operation = null)
 	{
-		if (!sPool.TryTake(out TimingLogger logger)) logger = new TimingLogger();
+		if (!sPool.TryTake(out TimingLogger? logger)) logger = new TimingLogger();
 		logger.mLogWriter = writer;
 		logger.mLogLevel = sDefaultLogLevel;
 		logger.mOperation = operation;
@@ -112,9 +117,9 @@ public class TimingLogger : IDisposable
 	/// <param name="writer">Log writer to use.</param>
 	/// <param name="level">Log level to use.</param>
 	/// <param name="operation">Name of the operation that is being measured.</param>
-	public static TimingLogger Measure(LogWriter writer, LogLevel level, string operation = null)
+	public static TimingLogger Measure(LogWriter writer, LogLevel level, string? operation = null)
 	{
-		if (!sPool.TryTake(out TimingLogger logger)) logger = new TimingLogger();
+		if (!sPool.TryTake(out TimingLogger? logger)) logger = new TimingLogger();
 		logger.mLogWriter = writer;
 		logger.mLogLevel = level;
 		logger.mOperation = operation;

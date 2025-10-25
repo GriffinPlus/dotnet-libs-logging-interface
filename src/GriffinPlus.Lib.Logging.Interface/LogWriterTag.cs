@@ -56,7 +56,7 @@ public sealed class LogWriterTag
 	/// Checks whether the specified string is a valid tag.
 	/// </summary>
 	/// <param name="tag">Tag to check.</param>
-	/// <exception cref="ArgumentNullException">The specified tag is <c>null</c>.</exception>
+	/// <exception cref="ArgumentNullException">The specified tag is <see langword="null"/>.</exception>
 	/// <exception cref="ArgumentException">The specified tag is invalid.</exception>
 	public static void CheckTag(string tag)
 	{
@@ -79,8 +79,8 @@ public sealed class LogWriterTag
 	/// </summary>
 	/// <param name="other">Tag to compare with.</param>
 	/// <returns>
-	/// <c>true</c> if the specified tag equals the current one;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/> if the specified tag equals the current one;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
 	private bool Equals(LogWriterTag other)
 	{
@@ -92,10 +92,10 @@ public sealed class LogWriterTag
 	/// </summary>
 	/// <param name="obj">Object to compare with.</param>
 	/// <returns>
-	/// <c>true</c> if the specified object equals the current one;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/> if the specified object equals the current one;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
-	public override bool Equals(object obj)
+	public override bool Equals(object? obj)
 	{
 		return ReferenceEquals(this, obj) || (obj is LogWriterTag other && Equals(other));
 	}
@@ -126,7 +126,7 @@ public sealed class LogWriterTag
 	{
 		unchecked
 		{
-			return (Id * 397) ^ (Name?.GetHashCode() ?? 0);
+			return (Id * 397) ^ Name.GetHashCode();
 		}
 	}
 }

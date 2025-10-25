@@ -12,6 +12,7 @@ using System.Text;
 
 using Xunit;
 
+// ReSharper disable CanSimplifyStringEscapeSequence
 // ReSharper disable ParameterOnlyUsedForPreconditionCheck.Local
 
 namespace GriffinPlus.Lib.Logging;
@@ -80,7 +81,7 @@ public class LogWriterTests
 			.Single(x => x.Name == nameof(LogWriter.Get) && x.IsGenericMethod && x.GetGenericArguments().Length == 1)
 			.MakeGenericMethod(type);
 
-		var writer = (LogWriter)method.Invoke(null, null);
+		var writer = (LogWriter)method.Invoke(null, null)!;
 		Assert.NotNull(writer);
 		Assert.Equal(expectedName, writer.Name);
 		Assert.Contains(LogWriter.KnownWriters, x => x.Name == expectedName);
@@ -97,8 +98,8 @@ public class LogWriterTests
 			.Single(x => x.Name == nameof(LogWriter.Get) && x.IsGenericMethod && x.GetGenericArguments().Length == 1)
 			.MakeGenericMethod(typeof(LogWriterTests));
 
-		var writer1 = (LogWriter)method.Invoke(null, null);
-		var writer2 = (LogWriter)method.Invoke(null, null);
+		var writer1 = (LogWriter)method.Invoke(null, null)!;
+		var writer2 = (LogWriter)method.Invoke(null, null)!;
 		Assert.Same(writer1, writer2);
 	}
 
@@ -163,7 +164,7 @@ public class LogWriterTests
 		Assert.DoesNotContain(LogWriter.KnownTags, x => x.Name == tag);
 		LogWriter writer2 = writer1.WithTag(tag);
 		Assert.NotSame(writer1, writer2);
-		Assert.Equal(new[] { tag }, writer2.Tags);
+		Assert.Equal([tag], writer2.Tags);
 		Assert.Contains(LogWriter.KnownTags, x => x.Name == tag);
 	}
 
@@ -179,10 +180,10 @@ public class LogWriterTests
 		Assert.DoesNotContain(LogWriter.KnownTags, x => x.Name == tag);
 		LogWriter writer1 = LogWriter.Get(name).WithTag(tag);
 		Assert.Contains(LogWriter.KnownTags, x => x.Name == tag);
-		Assert.Equal(new[] { tag }, writer1.Tags);
+		Assert.Equal([tag], writer1.Tags);
 		LogWriter writer2 = writer1.WithTag(tag);
 		Assert.Same(writer1, writer2);
-		Assert.Equal(new[] { tag }, writer2.Tags);
+		Assert.Equal([tag], writer2.Tags);
 		Assert.Contains(LogWriter.KnownTags, x => x.Name == tag);
 	}
 
@@ -193,7 +194,7 @@ public class LogWriterTests
 	public void WithTag_TagIsNull()
 	{
 		string name = Guid.NewGuid().ToString("D");
-		const string tag = null;
+		const string? tag = null;
 		LogWriter writer1 = LogWriter.Get(name);
 		Assert.Empty(writer1.Tags);
 		LogWriter writer2 = writer1.WithTag(tag);
@@ -250,7 +251,7 @@ public class LogWriterTests
 	}
 
 	/// <summary>
-	/// Tests whether <see cref="LogWriter.WithTags"/> returns the same <see cref="LogWriter"/> instance, if no tags (<c>null</c>) are specified.
+	/// Tests whether <see cref="LogWriter.WithTags"/> returns the same <see cref="LogWriter"/> instance, if no tags (<see langword="null"/>) are specified.
 	/// </summary>
 	[Fact]
 	public void WithTags_TagsIsNull()
@@ -353,8 +354,8 @@ public class LogWriterTests
 	/// </summary>
 	/// <param name="name">Name to check.</param>
 	/// <param name="ok">
-	/// <c>true</c> if the name is valid;<br/>
-	/// otherwise <c>false</c>.
+	/// <see langword="true"/> if the name is valid;<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </param>
 	[Theory]
 	[InlineData("A", true)]         // a letter
@@ -374,18 +375,18 @@ public class LogWriterTests
 		}
 		else
 		{
-			var exception = Assert.Throws<ArgumentException>(() => LogWriter.CheckName(name));
+			Assert.Throws<ArgumentException>(() => LogWriter.CheckName(name));
 		}
 	}
 
 	/// <summary>
-	/// Tests the <see cref="LogWriter.CheckName"/> method passing <c>null</c>.
+	/// Tests the <see cref="LogWriter.CheckName"/> method passing <see langword="null"/>.
 	/// The method should throw an <see cref="ArgumentNullException"/> in this case.
 	/// </summary>
 	[Fact]
 	public void CheckName_NameIsNull()
 	{
-		var exception = Assert.Throws<ArgumentNullException>(() => LogWriter.CheckName(null));
+		var exception = Assert.Throws<ArgumentNullException>(() => LogWriter.CheckName(null!));
 		Assert.Equal("name", exception.ParamName);
 	}
 
@@ -402,9 +403,9 @@ public class LogWriterTests
 	/// <param name="expectedMessage">The expected message.</param>
 	private static void Write_Common(Action<LogWriter, LogLevel> write, string expectedMessage)
 	{
-		LogWriter writerInEvent = null;
-		LogLevel levelInEvent = null;
-		string messageInEvent = null;
+		LogWriter? writerInEvent = null;
+		LogLevel? levelInEvent = null;
+		string? messageInEvent = null;
 
 		LogWriter writer = LogWriter.Get("MyWriter");
 		LogLevel level = LogLevel.Notice;
@@ -545,6 +546,7 @@ public class LogWriterTests
 			else if (exception.InnerException != null)
 			{
 				builder.AppendLine();
+				// ReSharper disable once TailRecursiveCall
 				Build(builder, exception.InnerException, indent: indent + 1);
 			}
 		}

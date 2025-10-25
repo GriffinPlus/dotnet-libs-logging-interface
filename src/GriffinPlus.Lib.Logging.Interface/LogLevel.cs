@@ -25,7 +25,7 @@ public sealed class LogLevel
 	/// Occurs when a new log writer is registered.
 	/// The global logging lock (<see cref="LogGlobals.Sync"/>) is acquired when raising the event.
 	/// </summary>
-	public static event LogLevelRegisteredEventHandler NewLogLevelRegistered;
+	public static event LogLevelRegisteredEventHandler? NewLogLevelRegistered;
 
 	/// <summary>
 	/// Emergency: Absolute "panic" condition, the system is unusable.
@@ -193,7 +193,7 @@ public sealed class LogLevel
 	/// (log level names may consist of all characters except line separators).
 	/// </summary>
 	/// <param name="name">Name to check.</param>
-	/// <exception cref="ArgumentNullException">The specified name is <c>null</c>.</exception>
+	/// <exception cref="ArgumentNullException">The specified name is <see langword="null"/>.</exception>
 	/// <exception cref="ArgumentException">The specified name is invalid.</exception>
 	public static void CheckName(string name)
 	{
@@ -216,13 +216,13 @@ public sealed class LogLevel
 	/// </summary>
 	/// <param name="name">Name of the aspect log level to get.</param>
 	/// <returns>The requested aspect log level.</returns>
-	/// <exception cref="ArgumentNullException">The specified name is <c>null</c>.</exception>
+	/// <exception cref="ArgumentNullException">The specified name is <see langword="null"/>.</exception>
 	/// <exception cref="ArgumentException">The specified name is invalid.</exception>
 	public static LogLevel GetAspect(string name)
 	{
 		CheckName(name);
 
-		sLogLevelsByName.TryGetValue(name, out LogLevel level);
+		sLogLevelsByName.TryGetValue(name, out LogLevel? level);
 		if (level != null) return level;
 
 		lock (LogGlobals.Sync)
@@ -274,7 +274,7 @@ public sealed class LogLevel
 	private static void OnNewLogLevelRegistered(LogLevel level)
 	{
 		System.Diagnostics.Debug.Assert(Monitor.IsEntered(LogGlobals.Sync));
-		LogLevelRegisteredEventHandler handler = NewLogLevelRegistered;
+		LogLevelRegisteredEventHandler? handler = NewLogLevelRegistered;
 		handler?.Invoke(level);
 	}
 }
