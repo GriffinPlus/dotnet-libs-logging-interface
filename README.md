@@ -13,7 +13,7 @@
 
 ## Supported Platforms
 
-The library is entirely written in C# using .NET Standard 2.0. A more specific build for .NET Framework 4.6.1 minimizes dependencies to framework components and provides optimizations for the this framework.
+The library is entirely written in C# using .NET Standard 2.0. More specific builds for .NET Framework 4.6.1, 4.8, .NET 6.0 and .NET 8.0 minimize dependencies to framework components and provides optimizations for the these frameworks.
 
 Therefore it should work on the following platforms (or higher):
 - .NET Framework 4.6.1
@@ -31,9 +31,9 @@ The library is tested automatically on the following frameworks and operating sy
 - .NET Core 2.2: Tests with library built for .NET Standard 2.0 (Windows Server 2022 and Ubuntu 22.04)
 - .NET Core 3.1: Tests with library built for .NET Standard 2.0 (Windows Server 2022 and Ubuntu 22.04)
 - .NET 5.0: Tests with library built for .NET Standard 2.0 (Windows Server 2022 and Ubuntu 22.04)
-- .NET 6.0: Tests with library built for .NET Standard 2.0 (Windows Server 2022 and Ubuntu 22.04)
-- .NET 7.0: Tests with library built for .NET Standard 2.0 (Windows Server 2022 and Ubuntu 22.04)
-- .NET 8.0: Tests with library built for .NET Standard 2.0 (Windows Server 2022 and Ubuntu 22.04)
+- .NET 6.0: Tests with library built for .NET 6.0 (Windows Server 2022 and Ubuntu 22.04)
+- .NET 7.0: Tests with library built for .NET 6.0 (Windows Server 2022 and Ubuntu 22.04)
+- .NET 8.0: Tests with library built for .NET 8.0 (Windows Server 2022 and Ubuntu 22.04)
 
 ## Coarse Overview and Terminology
 
@@ -170,6 +170,9 @@ The `GetTimestamp()` method of the `LogWriter` class returns an absolute timesta
 
 The `GetHighPrecisionTimestamp()` method of the `LogWriter` class returns a timestamp with nanosecond precision. The actual resolution of the timestamp depends on the system's clock, but on most modern systems the resolution is finer than one nanosecond. This timestamp can be used to measure timespans very accurately.
 
+#### PrettyFormatter
+
+The `PrettyFormatter` class provides methods to format runtime metadata such as types, methods, events, properties, fields, assemblies, modules, exceptions and objects in a human-readable way. The `LogWriter` class makes use of the `PrettyFormatter` internally when formatting log messages containing such metadata.
 
 ### Complete Example
 
