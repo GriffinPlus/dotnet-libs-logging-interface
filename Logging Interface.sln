@@ -59,6 +59,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GriffinPlus.Lib.Logging.Int
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GriffinPlus.Lib.Logging.Interface.Demo", "src\GriffinPlus.Lib.Logging.Interface.Demo\GriffinPlus.Lib.Logging.Interface.Demo.csproj", "{83322562-2162-4E3B-9E9D-CFCB9D9EF167}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrettyFormatterDemo", "src\PrettyFormatterDemo\PrettyFormatterDemo.csproj", "{FE6A7619-B48C-84F8-BDF4-5CEFD58B4C5F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -77,6 +79,10 @@ Global
 		{83322562-2162-4E3B-9E9D-CFCB9D9EF167}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{83322562-2162-4E3B-9E9D-CFCB9D9EF167}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{83322562-2162-4E3B-9E9D-CFCB9D9EF167}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FE6A7619-B48C-84F8-BDF4-5CEFD58B4C5F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FE6A7619-B48C-84F8-BDF4-5CEFD58B4C5F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FE6A7619-B48C-84F8-BDF4-5CEFD58B4C5F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FE6A7619-B48C-84F8-BDF4-5CEFD58B4C5F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
