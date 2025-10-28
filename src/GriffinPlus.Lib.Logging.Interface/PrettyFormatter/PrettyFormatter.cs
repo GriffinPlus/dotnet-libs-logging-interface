@@ -19,6 +19,8 @@ namespace GriffinPlus.Lib.Logging;
 /// </remarks>
 public static class PrettyFormatter
 {
+	private static readonly LogWriter sLog = LogWriter.Get(typeof(PrettyFormatter));
+
 	// ───────────────────────── Type ─────────────────────────
 
 	/// <summary>
@@ -39,8 +41,22 @@ public static class PrettyFormatter
 	public static string Format(Type? type, PrettyOptions? profile)
 	{
 		if (type == null) return "<null>";
+		TextFormatContext tfc = TextFormatContext.From(profile);
 		PrettyTypeOptions typeOptions = profile?.TypeOptions ?? PrettyTypePresets.Full;
-		return PrettyTypeEngine.Format(type, typeOptions);
+
+		try
+		{
+			return PrettyTypeEngine.Format(type, typeOptions, tfc);
+		}
+		catch (Exception ex)
+		{
+			sLog.Write(
+				LogLevel.Alert,
+				"An unhandled exception occurred while formatting. Exception:\n{0}",
+				LogWriter.UnwrapException(ex));
+
+			return "<error>";
+		}
 	}
 
 	/// <summary>
@@ -53,11 +69,7 @@ public static class PrettyFormatter
 	/// <returns>
 	/// A C#-like representation of the type.
 	/// </returns>
-	public static string Format(Type? type)
-	{
-		if (type == null) return "<null>";
-		return PrettyTypeEngine.Format(type, PrettyTypePresets.Full);
-	}
+	public static string Format(Type? type) => Format(type, profile: null);
 
 	/// <summary>
 	/// Formats an array of <see cref="Type"/> values using <see cref="PrettyOptions.TypeOptions"/> if provided,
@@ -77,8 +89,34 @@ public static class PrettyFormatter
 	/// </returns>
 	public static string Format(Type[]? types, PrettyOptions? profile)
 	{
+		if (types == null) return "<null>";
+		if (types.Length == 0) return "[]";
+
+		TextFormatContext tfc = TextFormatContext.From(profile);
 		PrettyTypeOptions typeOptions = profile?.TypeOptions ?? PrettyTypePresets.Full;
-		return FormatTypeInternal(types, typeOptions);
+
+		try
+		{
+			int capacity = Math.Max(types.Length * 32, 64);
+			var builder = new StringBuilder(capacity);
+			builder.Append('[');
+			for (int i = 0; i < types.Length; i++)
+			{
+				if (i > 0) builder.Append(", ");
+				PrettyTypeEngine.AppendType(builder, types[i], typeOptions, tfc);
+			}
+			builder.Append(']');
+			return builder.ToString();
+		}
+		catch (Exception ex)
+		{
+			sLog.Write(
+				LogLevel.Alert,
+				"An unhandled exception occurred while formatting. Exception:\n{0}",
+				LogWriter.UnwrapException(ex));
+
+			return "<error>";
+		}
 	}
 
 	/// <summary>
@@ -92,46 +130,7 @@ public static class PrettyFormatter
 	/// <returns>
 	/// A bracketed, comma-separated list of type representations (e.g., <c>"[int, string]"</c>).
 	/// </returns>
-	public static string Format(Type[]? types)
-	{
-		PrettyTypeOptions typeOptions = PrettyTypePresets.Full;
-		return FormatTypeInternal(types, typeOptions);
-	}
-
-	/// <summary>
-	/// Internal helper creating a bracketed, comma-separated representation of the supplied type array.
-	/// </summary>
-	/// <param name="types">
-	/// The collection of types to format. May be <see langword="null"/> to explicitly represent a missing value.
-	/// </param>
-	/// <param name="typeOptions">
-	/// Resolved, non-null type formatting options (namespace usage, etc.) already chosen by the caller.
-	/// </param>
-	/// <returns>
-	/// <list type="bullet">
-	/// <item><description><c>"&lt;null&gt;"</c> if <paramref name="types"/> is <see langword="null"/>.</description></item>
-	/// <item><description><c>"[]"</c> if the array is empty.</description></item>
-	/// <item><description>A string like <c>"[System.Int32, string]"</c> otherwise.</description></item>
-	/// </list>
-	/// </returns>
-	/// <remarks>
-	/// This method assumes <paramref name="typeOptions"/> has already been resolved (no <see langword="null"/>). It performs
-	/// no allocations beyond the output <see cref="StringBuilder"/> sized heuristically to reduce reallocation for small arrays.
-	/// </remarks>
-	private static string FormatTypeInternal(Type[]? types, PrettyTypeOptions typeOptions)
-	{
-		if (types == null) return "<null>";
-		if (types.Length == 0) return "[]";
-		var builder = new StringBuilder(types.Length * 8);
-		builder.Append('[');
-		for (int i = 0; i < types.Length; i++)
-		{
-			if (i > 0) builder.Append(", ");
-			builder.Append(PrettyTypeEngine.Format(types[i], typeOptions));
-		}
-		builder.Append(']');
-		return builder.ToString();
-	}
+	public static string Format(Type[]? types) => Format(types, profile: null);
 
 	/// <summary>
 	/// Formats a sequence of <see cref="Type"/> values using <see cref="PrettyOptions.TypeOptions"/> if provided,
@@ -149,9 +148,6 @@ public static class PrettyFormatter
 	/// <returns>
 	/// A bracketed, comma-separated list of type representations (e.g., <c>"[int, string]"</c>).
 	/// </returns>
-	/// <remarks>
-	/// This overload materializes the sequence at most once and delegates to <see cref="Format(Type[], PrettyOptions?)"/>.
-	/// </remarks>
 	public static string Format(IEnumerable<Type>? types, PrettyOptions? profile)
 	{
 		if (types == null) return "<null>";
@@ -159,29 +155,61 @@ public static class PrettyFormatter
 		// Avoid multiple enumeration and reuse the array overload.
 		if (types is Type[] array) return Format(array, profile);
 
-		PrettyTypeOptions options = profile?.TypeOptions ?? PrettyTypePresets.Full;
-		using IEnumerator<Type> enumerator = types.GetEnumerator();
-
-		// Empty enumeration
-		if (!enumerator.MoveNext())
-			return "[]";
-
-		var builder = new StringBuilder(64);
-		builder.Append('[');
-
-		// First element (already moved)
-		builder.Append(PrettyTypeEngine.Format(enumerator.Current, options));
-
-		// Remaining elements
-		while (enumerator.MoveNext())
+		try
 		{
-			builder.Append(", ");
-			builder.Append(PrettyTypeEngine.Format(enumerator.Current, options));
-		}
+			int capacity = 64; // fallback capacity for the StringBuilder
+			if (types is ICollection<Type> collection)
+			{
+				capacity = Math.Max(collection.Count * 32, 64);
+			}
 
-		builder.Append(']');
-		return builder.ToString();
+			TextFormatContext tfc = TextFormatContext.From(profile);
+			PrettyTypeOptions options = profile?.TypeOptions ?? PrettyTypePresets.Full;
+			using IEnumerator<Type> enumerator = types.GetEnumerator();
+
+			// Empty enumeration
+			if (!enumerator.MoveNext())
+				return "[]";
+
+			var builder = new StringBuilder(capacity);
+			builder.Append('[');
+
+			// First element (already moved)
+			PrettyTypeEngine.AppendType(builder, enumerator.Current, options, tfc);
+
+			// Remaining elements
+			while (enumerator.MoveNext())
+			{
+				builder.Append(", ");
+				PrettyTypeEngine.AppendType(builder, enumerator.Current, options, tfc);
+			}
+
+			builder.Append(']');
+			return builder.ToString();
+		}
+		catch (Exception ex)
+		{
+			sLog.Write(
+				LogLevel.Alert,
+				"An unhandled exception occurred while formatting. Exception:\n{0}",
+				LogWriter.UnwrapException(ex));
+
+			return "<error>";
+		}
 	}
+
+	/// <summary>
+	/// Formats a sequence of <see cref="Type"/> values using the <see cref="PrettyTypePresets.Full"/> preset.
+	/// </summary>
+	/// <param name="types">
+	/// The sequence of types to format.<br/>
+	/// If <see langword="null"/>, returns <c>"&lt;null&gt;"</c>.<br/>
+	/// If empty, returns <c>"[]"</c>.
+	/// </param>
+	/// <returns>
+	/// A bracketed, comma-separated list of type representations (e.g., <c>"[int, string]"</c>).
+	/// </returns>
+	public static string Format(IEnumerable<Type>? types) => Format(types, profile: null);
 
 	// ───────────────────────── Member ─────────────────────────
 
@@ -203,8 +231,22 @@ public static class PrettyFormatter
 	public static string Format(MemberInfo? member, PrettyOptions? profile)
 	{
 		if (member == null) return "<null>";
+		TextFormatContext tfc = TextFormatContext.From(profile);
 		PrettyMemberOptions memberOptions = profile?.MemberOptions ?? PrettyMemberPresets.Standard;
-		return PrettyMemberEngine.Format(member, memberOptions);
+
+		try
+		{
+			return PrettyMemberEngine.Format(member, memberOptions, tfc);
+		}
+		catch (Exception ex)
+		{
+			sLog.Write(
+				LogLevel.Alert,
+				"An unhandled exception occurred while formatting. Exception:\n{0}",
+				LogWriter.UnwrapException(ex));
+
+			return "<error>";
+		}
 	}
 
 	/// <summary>
@@ -217,10 +259,7 @@ public static class PrettyFormatter
 	/// <returns>
 	/// A one-line, human-readable signature for the member.
 	/// </returns>
-	public static string Format(MemberInfo? member)
-	{
-		return PrettyMemberEngine.Format(member, PrettyMemberPresets.Standard);
-	}
+	public static string Format(MemberInfo? member) => Format(member, profile: null);
 
 	/// <summary>
 	/// Formats a <see cref="ParameterInfo"/> using <see cref="PrettyOptions.MemberOptions"/> if provided,
@@ -242,8 +281,22 @@ public static class PrettyFormatter
 	public static string Format(ParameterInfo? parameter, PrettyOptions? profile, MethodBase? owner = null)
 	{
 		if (parameter == null) return "<null>";
+		TextFormatContext tfc = TextFormatContext.From(profile);
 		PrettyMemberOptions memberOptions = profile?.MemberOptions ?? PrettyMemberPresets.Standard;
-		return PrettyMemberEngine.Format(parameter, memberOptions, owner);
+
+		try
+		{
+			return PrettyMemberEngine.Format(parameter, memberOptions, owner, tfc);
+		}
+		catch (Exception ex)
+		{
+			sLog.Write(
+				LogLevel.Alert,
+				"An unhandled exception occurred while formatting. Exception:\n{0}",
+				LogWriter.UnwrapException(ex));
+
+			return "<error>";
+		}
 	}
 
 	// ───────────────────────── Assembly ─────────────────────────
@@ -266,9 +319,69 @@ public static class PrettyFormatter
 	public static string Format(Assembly? assembly, PrettyOptions? profile)
 	{
 		if (assembly == null) return "<null>";
-		TextFormatContext tf = TextFormatContext.From(profile);
+		TextFormatContext tfc = TextFormatContext.From(profile);
 		PrettyAssemblyOptions assemblyOptions = profile?.AssemblyOptions ?? PrettyAssemblyPresets.Minimal;
-		return PrettyAssemblyEngine.FormatAssembly(assembly, assemblyOptions, tf);
+
+		try
+		{
+			return PrettyAssemblyEngine.FormatAssembly(assembly, assemblyOptions, tfc);
+		}
+		catch (Exception ex)
+		{
+			sLog.Write(
+				LogLevel.Alert,
+				"An unhandled exception occurred while formatting. Exception:\n{0}",
+				LogWriter.UnwrapException(ex));
+
+			return "<error>";
+		}
+	}
+
+	/// <summary>
+	/// Formats an <see cref="Assembly"/> using the <see cref="PrettyAssemblyPresets.Minimal"/> preset.
+	/// </summary>
+	/// <param name="assembly">
+	/// The assembly to format.<br/>
+	/// If <see langword="null"/>, returns <c>"&lt;null&gt;"</c>.
+	/// </param>
+	/// <returns>
+	/// A human-readable description of the assembly.
+	/// </returns>
+	public static string Format(Assembly? assembly) => Format(assembly, profile: null);
+
+	/// <summary>
+	/// Formats an <see cref="AssemblyName"/> identity in CLR canonical form.
+	/// </summary>
+	/// <param name="name">
+	/// The assembly identity.<br/>
+	/// If <see langword="null"/>, returns <c>"&lt;null&gt;"</c>.
+	/// </param>
+	/// <param name="profile">
+	/// This parameter is ignored, but included for API consistency.
+	/// </param>
+	/// <remarks>
+	/// This method produces a single-line description of the assembly identity only; it does not
+	/// include modules, references, or exported types. For more detailed assembly diagnostics, use
+	/// <see cref="Format(Assembly?, PrettyOptions?)"/> instead.
+	/// </remarks>
+	public static string Format(AssemblyName? name, PrettyOptions? profile)
+	{
+		if (name == null) return "<null>";
+
+		try
+		{
+			// The engine for AssemblyName formatting currently takes no options.
+			return PrettyAssemblyEngine.FormatAssemblyName(name);
+		}
+		catch (Exception ex)
+		{
+			sLog.Write(
+				LogLevel.Alert,
+				"An unhandled exception occurred while formatting. Exception:\n{0}",
+				LogWriter.UnwrapException(ex));
+
+			return "<error>";
+		}
 	}
 
 	/// <summary>
@@ -283,10 +396,43 @@ public static class PrettyFormatter
 	/// include modules, references, or exported types. For more detailed assembly diagnostics, use
 	/// <see cref="Format(Assembly?, PrettyOptions?)"/> instead.
 	/// </remarks>
-	public static string Format(AssemblyName? name)
+	public static string Format(AssemblyName? name) => Format(name, profile: null);
+
+	/// <summary>
+	/// Formats a <see cref="Module"/> using <see cref="PrettyOptions.AssemblyOptions"/> if provided,
+	/// otherwise <see cref="PrettyAssemblyPresets.Minimal"/>.
+	/// </summary>
+	/// <param name="module">
+	/// The module to format.<br/>
+	/// If <see langword="null"/>, returns <c>"&lt;null&gt;"</c>.
+	/// </param>
+	/// <param name="profile">
+	/// Optional formatting profile to resolve <see cref="PrettyOptions.AssemblyOptions"/>.<br/>
+	/// If <see langword="null"/>, <see cref="PrettyAssemblyPresets.Minimal"/> is used.
+	/// </param>
+	/// <returns>
+	/// A concise one-line module description.
+	/// </returns>
+	public static string Format(Module? module, PrettyOptions? profile)
 	{
-		if (name == null) return "<null>";
-		return PrettyAssemblyEngine.FormatAssemblyName(name);
+		if (module == null) return "<null>";
+		PrettyAssemblyOptions assemblyOptions = profile?.AssemblyOptions ?? PrettyAssemblyPresets.Minimal;
+
+		try
+		{
+			// The engine for Module formatting currently ignores the options,
+			// but we pass them for consistency and future-proofing.
+			return PrettyAssemblyEngine.FormatModule(module, assemblyOptions);
+		}
+		catch (Exception ex)
+		{
+			sLog.Write(
+				LogLevel.Alert,
+				"An unhandled exception occurred while formatting. Exception:\n{0}",
+				LogWriter.UnwrapException(ex));
+
+			return "<error>";
+		}
 	}
 
 	/// <summary>
@@ -299,11 +445,7 @@ public static class PrettyFormatter
 	/// <returns>
 	/// A concise one-line module description.
 	/// </returns>
-	public static string Format(Module? module)
-	{
-		if (module == null) return "<null>";
-		return PrettyAssemblyEngine.FormatModule(module, PrettyAssemblyPresets.Minimal);
-	}
+	public static string Format(Module? module) => Format(module, profile: null);
 
 	// ───────────────────────── Exception ─────────────────────────
 
@@ -324,11 +466,22 @@ public static class PrettyFormatter
 	public static string Format(Exception? exception, PrettyOptions? profile)
 	{
 		if (exception == null) return "<null>";
-
-		TextFormatContext tf = TextFormatContext.From(profile);
+		TextFormatContext tfc = TextFormatContext.From(profile);
 		PrettyExceptionOptions exceptionOptions = profile?.ExceptionOptions ?? PrettyExceptionPresets.Standard;
 
-		return PrettyExceptionEngine.Format(exception, exceptionOptions, tf);
+		try
+		{
+			return PrettyExceptionEngine.Format(exception, exceptionOptions, tfc);
+		}
+		catch (Exception ex)
+		{
+			sLog.Write(
+				LogLevel.Alert,
+				"An unhandled exception occurred while formatting. Exception:\n{0}",
+				LogWriter.UnwrapException(ex));
+
+			return "<error>";
+		}
 	}
 
 	/// <summary>
@@ -341,7 +494,7 @@ public static class PrettyFormatter
 	/// <returns>
 	/// A formatted exception string suitable for log output.
 	/// </returns>
-	public static string Format(Exception? exception) => Format(exception, PrettyPresets.Standard);
+	public static string Format(Exception? exception) => Format(exception, profile: null);
 
 	// ───────────────────────── Object ─────────────────────────
 
@@ -372,8 +525,8 @@ public static class PrettyFormatter
 		{
 			case Exception exception:       return Format(exception, profile);
 			case Type type:                 return Format(type, profile);
-			case MemberInfo member:         return Format(member, profile);
 			case ParameterInfo parameter:   return Format(parameter, profile);
+			case MemberInfo member:         return Format(member, profile); // MemberInfo is base for PropertyInfo, MethodInfo, etc.
 			case Assembly assembly:         return Format(assembly, profile);
 			case Module module:             return Format(module, profile);
 			case AssemblyName assemblyName: return Format(assemblyName, profile);
@@ -397,5 +550,5 @@ public static class PrettyFormatter
 	/// <returns>
 	/// A human-readable string representation of the object.
 	/// </returns>
-	public static string Format(object? obj) => Format(obj, PrettyPresets.Standard);
+	public static string Format(object? obj) => Format(obj, profile: null);
 }

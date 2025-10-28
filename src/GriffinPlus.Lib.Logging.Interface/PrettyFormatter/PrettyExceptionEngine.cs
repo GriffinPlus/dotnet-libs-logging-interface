@@ -10,9 +10,9 @@ using System.Reflection;
 using System.Text;
 
 // ReSharper disable LoopCanBeConvertedToQuery
+// ReSharper disable TailRecursiveCall
 
 namespace GriffinPlus.Lib.Logging;
-
 
 /// <summary>
 /// Internal engine that formats <see cref="Exception"/> instances into compact, readable text suitable for logs.
@@ -30,6 +30,46 @@ namespace GriffinPlus.Lib.Logging;
 static class PrettyExceptionEngine
 {
 	/// <summary>
+	/// Static, frozen member options for formatting TargetSite WITH namespace. (Optimized)
+	/// </summary>
+	private static readonly PrettyMemberOptions sTargetSiteMemberOptionsWithNamespace = new PrettyMemberOptions
+	{
+		IncludeDeclaringType = true,
+		ShowAccessibility = false,
+		ShowMemberModifiers = false,
+		ShowAsyncForAsyncMethods = false,
+		ShowParameterNames = true,
+		ShowNullabilityAnnotations = false,
+		ShowAttributes = false,
+		ShowParameterAttributes = false,
+		AttributeFilter = null,
+		AttributeMaxElements = 0,
+		ShowGenericConstraintsOnMethods = false,
+		ShowGenericConstraintsOnTypes = false,
+		UseNamespaceForTypes = true
+	}.Freeze();
+
+	/// <summary>
+	/// Static, frozen member options for formatting TargetSite WITHOUT namespace. (Optimized)
+	/// </summary>
+	private static readonly PrettyMemberOptions sTargetSiteMemberOptionsWithoutNamespace = new PrettyMemberOptions
+	{
+		IncludeDeclaringType = true,
+		ShowAccessibility = false,
+		ShowMemberModifiers = false,
+		ShowAsyncForAsyncMethods = false,
+		ShowParameterNames = true,
+		ShowNullabilityAnnotations = false,
+		ShowAttributes = false,
+		ShowParameterAttributes = false,
+		AttributeFilter = null,
+		AttributeMaxElements = 0,
+		ShowGenericConstraintsOnMethods = false,
+		ShowGenericConstraintsOnTypes = false,
+		UseNamespaceForTypes = false
+	}.Freeze();
+
+	/// <summary>
 	/// Formats an <see cref="Exception"/> according to the specified <paramref name="options"/>.
 	/// </summary>
 	/// <param name="exception">
@@ -41,31 +81,24 @@ static class PrettyExceptionEngine
 	/// Must not be <see langword="null"/>.
 	/// </param>
 	/// <param name="tfc">
-	/// Optional text-formatting context providing deterministic newline/indent/culture handling.<br/>
-	/// If <see langword="null"/>, platform defaults are used (equivalent to <see cref="Environment.NewLine"/> and two-space indent).
+	/// Text-formatting context providing deterministic newline/indent/culture handling.
 	/// </param>
 	/// <returns>
 	/// A string suitable for logging and diagnostics.
 	/// </returns>
-	/// <exception cref="ArgumentNullException">Thrown if <paramref name="options"/> is <see langword="null"/>.</exception>
-	public static string Format(Exception? exception, PrettyExceptionOptions options, TextFormatContext? tfc = null)
+	/// <exception cref="ArgumentNullException">
+	/// Thrown if <paramref name="exception"/> or <paramref name="options"/> is <see langword="null"/>.
+	/// </exception>
+	public static string Format(Exception exception, PrettyExceptionOptions options, TextFormatContext tfc)
 	{
-		if (exception == null) return "<null>";
+		if (exception == null) throw new ArgumentNullException(nameof(exception));
 		if (options == null) throw new ArgumentNullException(nameof(options));
 
-		// optional Aggregate flattening (safe: no-op for non-AggregateException)
-		if (options.FlattenAggregates)
-		{
-			if (exception is AggregateException aggregateException)
-				exception = aggregateException.Flatten();
-		}
-
-		TextFormatContext tf = tfc ?? TextFormatContext.From(null);
 		var builder = new StringBuilder(512);
 		var typeOptions = new PrettyTypeOptions { UseNamespace = options.UseNamespaceForTypes };
 
-		AppendException(builder, exception, options, depth: 0, typeOptions, tf);
-		return TextPostProcessor.ApplyWhole(builder.ToString(), tf);
+		AppendException(builder, exception, options, depth: 0, typeOptions, tfc);
+		return TextPostProcessor.ApplyWhole(builder.ToString(), tfc);
 	}
 
 	/// <summary>
@@ -92,10 +125,11 @@ static class PrettyExceptionEngine
 		var header = new StringBuilder();
 		if (options.IncludeType)
 		{
-			header.Append(PrettyTypeEngine.Format(exception.GetType(), typeOptions));
+			PrettyTypeEngine.AppendType(header, exception.GetType(), typeOptions, tfc);
 			if (!string.IsNullOrEmpty(exception.Message)) header.Append(": ");
 		}
-		header.Append(exception.Message);
+		if (!string.IsNullOrEmpty(exception.Message))
+			header.Append(TextPostProcessor.StripBiDiControls(exception.Message));
 
 		AppendRepeat(builder, tfc.Indent, depth);
 		builder.Append(header).Append(tfc.NewLine);
@@ -112,21 +146,69 @@ static class PrettyExceptionEngine
 		// Inner exceptions
 		if (depth < options.MaxInnerExceptionDepth)
 		{
-			if (exception is AggregateException { InnerExceptions.Count: > 0 } aggregateException)
+			Exception? singleInner = null;                        // For non-Aggregate exceptions
+			IReadOnlyCollection<Exception>? multipleInner = null; // For Aggregate exceptions
+			bool usedFlattenedInners = false;                     // Flag to indicate if Flatten() was used
+
+			// Determine which inner exceptions to process based on type and options
+			if (options.FlattenAggregates && exception is AggregateException aggExForFlatten)
+			{
+				// Flattening is enabled and it's an AggregateException
+				try
+				{
+					AggregateException flattened = aggExForFlatten.Flatten();
+					// Use the inner exceptions from the *flattened* instance
+					multipleInner = flattened.InnerExceptions;
+					usedFlattenedInners = true; // Mark that we used the flattened set
+				}
+				catch
+				{
+					// Flatten() failed, fallback to using the original InnerExceptions
+					try { multipleInner = aggExForFlatten.InnerExceptions; }
+					catch { multipleInner = null; }
+				}
+			}
+			else // Flattening is disabled or it's not an AggregateException
+			{
+				if (exception is AggregateException aggExOriginal)
+				{
+					// It's an AggregateException, use its InnerExceptions directly
+					try { multipleInner = aggExOriginal.InnerExceptions; }
+					catch { multipleInner = null; }
+				}
+				else
+				{
+					// It's a regular exception, use its InnerException
+					try { singleInner = exception.InnerException; }
+					catch { singleInner = null; }
+				}
+			}
+
+			// Recursively append the determined inner exceptions
+			if (multipleInner?.Count > 0)
 			{
 				int i = 0;
-				foreach (Exception inner in aggregateException.InnerExceptions)
+				foreach (Exception inner in multipleInner)
 				{
-					AppendRepeat(builder, tfc.Indent, depth);
-					builder.Append("Inner[").Append(i++).Append("]:").Append(tfc.NewLine);
+					if (inner == null) continue;              // Safety check
+					AppendRepeat(builder, tfc.Indent, depth); // Indent the "Inner[x]:" line
+					// Add index only if it was originally an Aggregate or if flattened
+					bool isOriginalAggregate = exception is AggregateException;
+					if (isOriginalAggregate || usedFlattenedInners)
+						builder.Append("Inner[").Append(i++).Append("]:").Append(tfc.NewLine);
+					else // Should not happen with current logic, but defensive
+						builder.Append("Inner:").Append(tfc.NewLine);
+
+					// Recursive call for the inner exception
 					AppendException(builder, inner, options, depth + 1, typeOptions, tfc);
 				}
 			}
-			else if (exception.InnerException != null)
+			else if (singleInner != null)
 			{
-				AppendRepeat(builder, tfc.Indent, depth);
+				AppendRepeat(builder, tfc.Indent, depth); // Indent the "Inner:" line
 				builder.Append("Inner:").Append(tfc.NewLine);
-				AppendException(builder, exception.InnerException, options, depth + 1, typeOptions, tfc);
+				// Recursive call for the single inner exception
+				AppendException(builder, singleInner, options, depth + 1, typeOptions, tfc);
 			}
 		}
 	}
@@ -166,39 +248,33 @@ static class PrettyExceptionEngine
 				.Append(tfc.NewLine);
 		}
 
-		if (options.IncludeSource && !string.IsNullOrEmpty(exception.Source))
+		if (options.IncludeSource && !string.IsNullOrWhiteSpace(exception.Source))
 		{
 			AppendRepeat(builder, tfc.Indent, depth);
-			builder.Append("  Source: ").Append(exception.Source).Append(tfc.NewLine);
+			builder
+				.Append("  Source: ")
+				.Append(TextPostProcessor.StripBiDiControls(exception.Source))
+				.Append(tfc.NewLine);
 		}
 
-		if (options.IncludeHelpLink && !string.IsNullOrEmpty(exception.HelpLink))
+		if (options.IncludeHelpLink && !string.IsNullOrWhiteSpace(exception.HelpLink))
 		{
 			AppendRepeat(builder, tfc.Indent, depth);
-			builder.Append("  HelpLink: ").Append(exception.HelpLink).Append(tfc.NewLine);
+			builder
+				.Append("  HelpLink: ")
+				.Append(TextPostProcessor.StripBiDiControls(exception.HelpLink))
+				.Append(tfc.NewLine);
 		}
 
 		if (options.IncludeTargetSite && exception.TargetSite != null)
 		{
-			MethodBase? mi = exception.TargetSite;
+			MethodBase? methodBase = exception.TargetSite;
 			string memberText = PrettyMemberEngine.Format(
-				mi,
-				new PrettyMemberOptions
-				{
-					IncludeDeclaringType = true,
-					ShowAccessibility = false,
-					ShowMemberModifiers = false,
-					ShowAsyncForAsyncMethods = false,
-					ShowParameterNames = true,
-					ShowNullabilityAnnotations = false,
-					ShowAttributes = false,
-					ShowParameterAttributes = false,
-					AttributeFilter = null,
-					AttributeMaxElements = 0,
-					ShowGenericConstraintsOnMethods = false,
-					ShowGenericConstraintsOnTypes = false,
-					UseNamespaceForTypes = typeOptions.UseNamespace
-				});
+				methodBase,
+				typeOptions.UseNamespace
+					? sTargetSiteMemberOptionsWithNamespace
+					: sTargetSiteMemberOptionsWithoutNamespace,
+				tfc);
 			AppendRepeat(builder, tfc.Indent, depth);
 			builder.Append("  TargetSite: ").Append(memberText).Append(tfc.NewLine);
 		}
@@ -214,8 +290,8 @@ static class PrettyExceptionEngine
 	/// <param name="typeOptions">Type-name rendering options used for compact value formatting.</param>
 	/// <param name="tfc">The text-formatting context (newline/indent/culture).</param>
 	/// <remarks>
-	/// Values are formatted with <see cref="FormatDataValue(object, PrettyTypeOptions, TextFormatContext)"/> to avoid deep
-	/// recursion or overly verbose output.
+	/// Values are formatted with <see cref="AppendDataValue(StringBuilder, object, PrettyTypeOptions, TextFormatContext)"/>
+	/// to avoid deep recursion or overly verbose output.
 	/// </remarks>
 	private static void AppendData(
 		StringBuilder          builder,
@@ -225,19 +301,23 @@ static class PrettyExceptionEngine
 		PrettyTypeOptions      typeOptions,
 		TextFormatContext      tfc)
 	{
-		if (exception.Data.Count == 0)
+		if (exception.Data.Count == 0 || options.DataMaxItems == 0)
 			return;
 
 		AppendRepeat(builder, tfc.Indent, depth);
 		builder.Append("  Data:").Append(tfc.NewLine);
 
 		// Sort keys for deterministic output
-		var keys = new List<object>();
-		foreach (object key in exception.Data.Keys) keys.Add(key);
+		// (store original keys to avoid multiple ToString() calls to reduce GC pressure)
+		var keys = new List<(string KeyString, object? OriginalKey)>();
+		foreach (object key in exception.Data.Keys)
+		{
+			keys.Add((key?.ToString() ?? string.Empty, key));
+		}
 		try
 		{
 			// Sort by string representation for stability
-			keys.Sort((a, b) => string.Compare(a.ToString(), b.ToString(), StringComparison.Ordinal));
+			keys.Sort((a, b) => string.Compare(a.KeyString, b.KeyString, StringComparison.Ordinal));
 		}
 		catch
 		{
@@ -245,31 +325,48 @@ static class PrettyExceptionEngine
 		}
 
 		int shown = 0;
-		foreach (object key in keys)
+		foreach ((string _, object? key) in keys)
 		{
-			if (options.DataMaxItems > 0 && shown >= options.DataMaxItems)
+			if (options.DataMaxItems >= 0 && shown >= options.DataMaxItems)
 			{
 				AppendRepeat(builder, tfc.Indent, depth);
 				builder.Append("    …").Append(tfc.NewLine);
 				break;
 			}
 
+			// Get value
 			object? value;
-			try { value = exception.Data[key]; }
+			try { value = exception.Data[key!]; }
 			catch { value = "!(Access Error)"; /* defensive */ }
 
-			string k = FormatDataValue(key, typeOptions, tfc);
-			string v = FormatDataValue(value, typeOptions, tfc);
+			// Format key and value directly into the builder
 			AppendRepeat(builder, tfc.Indent, depth);
-			builder.Append("    ").Append(k).Append(" = ").Append(v).Append(tfc.NewLine);
+			if (options.DataDictionaryFormat == DictionaryFormat.Tuples)
+			{
+				builder.Append("    (");
+				AppendDataValue(builder, key, typeOptions, tfc);
+				builder.Append(", ");
+				AppendDataValue(builder, value, typeOptions, tfc);
+				builder.Append(')').Append(tfc.NewLine);
+			}
+			else // KeyEqualsValue (default)
+			{
+				builder.Append("    ");
+				AppendDataValue(builder, key, typeOptions, tfc);
+				builder.Append(" = ");
+				AppendDataValue(builder, value, typeOptions, tfc);
+				builder.Append(tfc.NewLine);
+			}
+
 			shown++;
 		}
 	}
 
 	/// <summary>
-	/// Formats a value from the Exception.Data dictionary using simple, non-recursive rules,
-	/// applying truncation rules from the TextFormatContext.
+	/// Formats a value from the <see cref="Exception.Data"/> dictionary using simple, non-recursive rules,
+	/// applying truncation rules from the <see cref="TextFormatContext"/>.
 	/// </summary>
+	/// <param name="builder">The output target builder.</param>
 	/// <param name="value">The data key or value to format; may be null.</param>
 	/// <param name="typeOptions">Type-name rendering options used when falling back to a type name.</param>
 	/// <param name="tfc">The text formatting context, providing truncation rules (MaxLineLength, TruncationMarker).</param>
@@ -277,55 +374,76 @@ static class PrettyExceptionEngine
 	/// A short, truncated string representation. Strings are quoted. Known primitives are rendered invariantly;
 	/// complex values fall back to <see cref="object.ToString"/> if concise, otherwise to the value's type name.
 	/// </returns>
-	private static string FormatDataValue(object? value, PrettyTypeOptions typeOptions, TextFormatContext tfc)
+	private static void AppendDataValue(
+		StringBuilder     builder,
+		object?           value,
+		PrettyTypeOptions typeOptions,
+		TextFormatContext tfc)
 	{
-		if (value == null) return "<null>";
-
-		// --- Truncation Setup ---
-		// 1. Define a default cap for Data values.
-		const int defaultCap = 200;
-		int cap = defaultCap;
-
-		// 2. Check if the global TextFormatContext defines a *stricter* limit.
-		//    We respect the global limit only if it's enabled (Truncate=true, MaxLineLength > 0)
-		//    and *smaller* than our default cap.
-		if (tfc is { Truncate: true, MaxLineLength: > 0 } && tfc.MaxLineLength < cap)
+		if (value == null)
 		{
-			cap = tfc.MaxLineLength;
+			builder.Append("<null>");
+			return;
 		}
 
-		// 3. Calculate the actual number of characters to keep, accounting for the marker length.
-		//    Ensure 'keep' is not negative if the marker is longer than the cap.
-		int keep = cap - tfc.TruncationMarker.Length;
-		if (keep < 0) keep = 0;
-
-		// --- Value Formatting ---
-
 		// Case 1: string
-		// Apply truncation if the string exceeds the calculated cap.
 		if (value is string s)
 		{
-			if (s.Length > cap)
+			builder.Append('\"');
+
+			string marker = tfc.TruncationMarker;
+			int cap = tfc.MaxLineLength > 0 ? tfc.MaxLineLength : s.Length;
+			// Decide truncation by *grapheme* count, not UTF-16 code units:
+			bool graphemesFit = cap > 0 && TextPostProcessor.SafePrefixCharCountByTextElements(s, 0, cap, s.Length) >= s.Length;
+			bool isTruncated = tfc.Truncate && cap > 0 && !graphemesFit;
+
+			if (!isTruncated)
 			{
-				// Use Substring(int, int) for efficient slicing.
-				s = s.Substring(0, keep) + tfc.TruncationMarker;
+				TextPostProcessor.AppendEscaped(builder, s, 0, s.Length);
 			}
-			return "\"" + s + "\""; // Always quote strings.
+			else
+			{
+				int markerElems = new StringInfo(marker).LengthInTextElements;
+				int limitElems = cap - markerElems;
+				if (limitElems > 0)
+				{
+					int safeChars = TextPostProcessor.SafePrefixCharCountByTextElements(s, 0, limitElems, s.Length);
+					if (safeChars > 0)
+						TextPostProcessor.AppendEscaped(builder, s, 0, safeChars);
+				}
+				builder.Append(marker);
+			}
+
+			builder.Append('\"');
+			return;
 		}
 
 		// Case 2: Known primitive types (bool, char)
-		if (value is bool b) return b ? "true" : "false";
-		if (value is char c) return "'" + c + "'";
+		if (value is bool b)
+		{
+			builder.Append(b ? "true" : "false");
+			return;
+		}
+		if (value is char c)
+		{
+			builder.Append('\'');
+			TextPostProcessor.AppendEscapedChar(builder, c);
+			builder.Append('\'');
+			return;
+		}
 
 		// Case 3: IFormattable (numbers, dates, Guids, etc.)
-		// Use InvariantCulture for a stable, culture-independent representation.
 		if (value is IFormattable formattable)
 		{
-			try { return formattable.ToString(null, CultureInfo.InvariantCulture); }
+			try
+			{
+				builder.Append(formattable.ToString(null, tfc.Culture));
+			}
 			catch
 			{
-				/* Defensive: Swallow exceptions from custom IFormattable implementations */
+				builder.Append("(!(format error))");
 			}
+			return;
 		}
 
 		// Case 4: Fallback to object.ToString()
@@ -337,17 +455,14 @@ static class PrettyExceptionEngine
 		// we prefer printing the pretty-formatted type name instead.
 		if (string.IsNullOrEmpty(sToString) || sToString == value.GetType().ToString())
 		{
-			return PrettyTypeEngine.Format(value.GetType(), typeOptions);
+			PrettyTypeEngine.AppendType(builder, value.GetType(), typeOptions, tfc);
+			return;
 		}
 
-		// Apply truncation to the ToString() result if it exceeds the cap.
-		if (sToString.Length > cap)
-		{
-			return sToString.Substring(0, keep) + tfc.TruncationMarker;
-		}
-
-		// Return the safe, non-empty, and appropriately-sized ToString() result.
-		return sToString;
+		// Sanitize potential BiDi controls (unquoted text) *before* length truncation.
+		// ReSharper disable once RedundantSuppressNullableWarningExpression
+		string sanitized = TextPostProcessor.StripBiDiControls(sToString!);
+		builder.Append(TextPostProcessor.TruncateString(sanitized, tfc));
 	}
 
 	/// <summary>
@@ -369,7 +484,8 @@ static class PrettyExceptionEngine
 		TextFormatContext      tfc)
 	{
 		string? stackTrace = exception.StackTrace;
-		if (string.IsNullOrEmpty(stackTrace)) return;
+		if (string.IsNullOrEmpty(stackTrace) || options.StackFrameLimit == 0)
+			return;
 
 		AppendRepeat(builder, tfc.Indent, depth);
 		builder.Append("  StackTrace:").Append(tfc.NewLine);
@@ -377,13 +493,13 @@ static class PrettyExceptionEngine
 		int lineCount = 0;
 		int startIndex = 0;
 		int len = stackTrace.Length;
-		int limit = options.StackFrameLimit > 0 ? options.StackFrameLimit : int.MaxValue;
+		int limit = options.StackFrameLimit < 0 ? int.MaxValue : options.StackFrameLimit;
 
 		for (int i = 0; i < len; i++)
 		{
 			char c = stackTrace[i];
 
-			// Find newline (LR or CRLF)
+			// Find newline (LF or CRLF)
 			if (c is '\n' or '\r')
 			{
 				if (lineCount >= limit) break; // limit reached
@@ -396,14 +512,13 @@ static class PrettyExceptionEngine
 					// It is CRLF
 					AppendTrimmedLine(builder, stackTrace, startIndex, lineLength, depth, tfc);
 					i++; // skip \n
-					startIndex = i + 1;
 				}
 				else
 				{
 					// It is only \n or only \r
 					AppendTrimmedLine(builder, stackTrace, startIndex, lineLength, depth, tfc);
-					startIndex = i + 1;
 				}
+				startIndex = i + 1;
 				lineCount++;
 			}
 		}
@@ -467,13 +582,11 @@ static class PrettyExceptionEngine
 		}
 
 		int trimmedLength = end - start + 1;
-		if (trimmedLength > 0)
-		{
-			AppendRepeat(builder, tfc.Indent, depth);
-			builder.Append("    ")
-				.Append(text, start, trimmedLength) // StringBuilder.Append(string, int, int)
-				.Append(tfc.NewLine);
-		}
+		if (trimmedLength <= 0) return;
+		AppendRepeat(builder, tfc.Indent, depth);
+		// Stacktrace is an unquoted text => remove BiDi controls
+		string line = TextPostProcessor.StripBiDiControls(text.Substring(start, trimmedLength));
+		builder.Append("    ").Append(line).Append(tfc.NewLine);
 	}
 
 	// ───────────────────────── Low-level helpers ─────────────────────────

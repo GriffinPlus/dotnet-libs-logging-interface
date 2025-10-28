@@ -2,6 +2,8 @@
 using System.Reflection;
 using System.Text;
 
+// ReSharper disable UseIndexFromEndExpression
+
 namespace GriffinPlus.Lib.Logging;
 
 static partial class PrettyMemberEngine
@@ -13,12 +15,12 @@ static partial class PrettyMemberEngine
 	/// <returns>
 	/// The accessibility keyword (e.g., <c>public</c>, <c>protected</c>, <c>internal</c>, …).
 	/// </returns>
-	private static string GetAccessibility(MethodBase methodInfo) => methodInfo.IsPublic              ? "public"
-	                                                                 : methodInfo.IsFamily            ? "protected"
-	                                                                 : methodInfo.IsAssembly          ? "internal"
-	                                                                 : methodInfo.IsFamilyOrAssembly  ? "protected internal"
-	                                                                 : methodInfo.IsFamilyAndAssembly ? "private protected"
-	                                                                                                    : "private";
+	private static string GetAccessibility(MethodBase methodInfo) => GetAccessibility(
+		methodInfo.IsPublic,
+		methodInfo.IsFamily,
+		methodInfo.IsAssembly,
+		methodInfo.IsFamilyOrAssembly,
+		methodInfo.IsFamilyAndAssembly);
 
 	/// <summary>
 	/// Gets the C# accessibility keyword for a field.
@@ -27,24 +29,62 @@ static partial class PrettyMemberEngine
 	/// <returns>
 	/// The accessibility keyword (e.g., <c>public</c>, <c>protected</c>, <c>internal</c>, …).
 	/// </returns>
-	private static string GetAccessibility(FieldInfo fieldInfo) => fieldInfo.IsPublic              ? "public"
-	                                                               : fieldInfo.IsFamily            ? "protected"
-	                                                               : fieldInfo.IsAssembly          ? "internal"
-	                                                               : fieldInfo.IsFamilyOrAssembly  ? "protected internal"
-	                                                               : fieldInfo.IsFamilyAndAssembly ? "private protected"
-	                                                                                                 : "private";
+	private static string GetAccessibility(FieldInfo fieldInfo) => GetAccessibility(
+		fieldInfo.IsPublic,
+		fieldInfo.IsFamily,
+		fieldInfo.IsAssembly,
+		fieldInfo.IsFamilyOrAssembly,
+		fieldInfo.IsFamilyAndAssembly);
 
 	/// <summary>
-	/// Builds the modifier string (e.g., <c>static</c>, <c>virtual</c>, <c>override</c>, <c>sealed</c>, <c>extern</c>) for a method/constructor.
+	/// Determines the accessibility level of a member based on its visibility flags.
 	/// </summary>
-	/// <param name="method">The method or constructor.</param>
+	/// <param name="isPublic">Indicates whether the member is 'public'.</param>
+	/// <param name="isFamily">Indicates whether the member is 'protected'.</param>
+	/// <param name="isAssembly">Indicates whether the member is 'internal'.</param>
+	/// <param name="isFamilyOrAssembly">Indicates whether the member is 'protected internal'.</param>
+	/// <param name="isFamilyAndAssembly">Indicates whether the member is 'private protected'.</param>
 	/// <returns>
-	/// A space-terminated modifier string (or empty if none).
+	/// A string representing the accessibility level of the member. Possible values are  <see langword="public"/>,
+	/// <see langword="protected"/>, <see langword="internal"/>,  <see langword="protected internal"/>,
+	/// <see langword="private protected"/>, or <see langword="private"/>.
 	/// </returns>
-	private static string GetMemberModifiers(MethodBase method)
+	private static string GetAccessibility(
+		bool isPublic,
+		bool isFamily,
+		bool isAssembly,
+		bool isFamilyOrAssembly,
+		bool isFamilyAndAssembly)
 	{
-		var builder = new StringBuilder();
+		return isPublic              ? "public"
+		       : isFamily            ? "protected"
+		       : isAssembly          ? "internal"
+		       : isFamilyOrAssembly  ? "protected internal"
+		       : isFamilyAndAssembly ? "private protected"
+		                               : "private";
+	}
 
+	/// <summary>
+	/// Appends the appropriate member modifiers (e.g., <see langword="static"/>, <see langword="abstract"/>",
+	/// <see langword="virtual"/>, <see langword="override"/>, <see langword="sealed"/>, <see langword="extern"/>) to
+	/// the specified <see cref="StringBuilder"/> based on the characteristics of the provided <see cref="MethodBase"/>.
+	/// </summary>
+	/// <param name="builder">
+	/// The <see cref="StringBuilder"/> to which the member modifiers will be appended.<br/>
+	/// This parameter cannot be <see langword="null"/>.
+	/// </param>
+	/// <param name="method">
+	/// The <see cref="MethodBase"/> representing the method whose modifiers are to be determined.<br/>
+	/// This parameter cannot be <see langword="null"/>.
+	/// </param>
+	/// <remarks>
+	/// The method analyzes the provided <see cref="MethodBase"/> to determine its modifiers, such as whether it is static,
+	/// abstract, virtual, or an override. It also checks for specific implementation flags, such as
+	/// <see cref="MethodImplAttributes.InternalCall"/> or <see cref="MethodImplAttributes.Unmanaged"/>, to append the "extern"
+	/// modifier.
+	/// </remarks>
+	private static void AppendMemberModifiers(StringBuilder builder, MethodBase method)
+	{
 		if (method.IsStatic) builder.Append("static ");
 		if (method.IsAbstract) builder.Append("abstract ");
 		else if (method.IsVirtual)
@@ -66,8 +106,6 @@ static partial class PrettyMemberEngine
 		    (method.MethodImplementationFlags & MethodImplAttributes.Unmanaged) != 0)
 			builder.Append("extern ");
 		// ReSharper restore BitwiseOperatorOnEnumWithoutFlags
-
-		return builder.ToString();
 	}
 
 	/// <summary>
@@ -159,10 +197,9 @@ static partial class PrettyMemberEngine
 
 		// --- End fast path ---
 
-		// The builder is initialized lazily. If the input string is already
-		// perfectly normalized *and* contains no leading/trailing spaces,
-		// this method *could* return the original string 's', though the
-		// current logic will always build a new one if 's' is not just whitespace.
+		// The fast path above handles already-normalized strings.
+		// For strings requiring normalization, the builder is initialized lazily
+		// only when the first non-whitespace character is encountered.
 		StringBuilder? builder = null;
 
 		// 'inWhitespace' acts as a state flag.

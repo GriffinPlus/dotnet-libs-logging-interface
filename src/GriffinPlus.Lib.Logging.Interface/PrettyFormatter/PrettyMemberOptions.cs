@@ -12,10 +12,10 @@ namespace GriffinPlus.Lib.Logging;
 /// Configuration options that control how <see cref="MemberInfo"/> and <see cref="ParameterInfo"/> values are formatted.
 /// </summary>
 /// <remarks>
-/// Use <see cref="PrettyMemberPresets"/> for common configurations and call <see cref="Clone"/> if you need
-/// a mutable copy to tweak.
+/// Use <see cref="PrettyMemberPresets"/> for common configurations and call
+/// <see cref="PrettyOptionsBase{PrettyMemberOptions}.Clone"/> if you need a mutable copy to tweak.
 /// </remarks>
-public sealed class PrettyMemberOptions
+public sealed class PrettyMemberOptions : PrettyOptionsBase<PrettyMemberOptions>
 {
 	#region Properties
 
@@ -212,57 +212,6 @@ public sealed class PrettyMemberOptions
 
 	#endregion
 
-	#region Freeze Support
-
-	/// <summary>
-	/// Gets or sets a value indicating whether this options instance is frozen (read-only).
-	/// </summary>
-	public bool IsFrozen { get; private set; }
-
-	/// <summary>
-	/// Makes this options instance read-only. Subsequent attempts to mutate it will throw.
-	/// </summary>
-	/// <returns>
-	/// The frozen <see cref="PrettyMemberOptions"/> instance.
-	/// </returns>
-	public PrettyMemberOptions Freeze()
-	{
-		IsFrozen = true;
-		return this;
-	}
-
-	/// <summary>
-	/// Ensures that the current instance is mutable and can be modified.
-	/// </summary>
-	/// <remarks>
-	/// If the instance is frozen, an <see cref="InvalidOperationException"/> is thrown.
-	/// To modify a frozen instance, use the <see cref="Clone"/> method to create a mutable copy.
-	/// </remarks>
-	/// <exception cref="InvalidOperationException">Thrown if the instance is frozen and cannot be modified.</exception>
-	private void EnsureMutable()
-	{
-		if (IsFrozen) throw new InvalidOperationException("Options instance is frozen. Clone() to modify.");
-	}
-
-	#endregion
-
-	#region Cloning
-
-	/// <summary>
-	/// Creates a deep unfrozen copy of this options instance.
-	/// </summary>
-	/// <returns>
-	/// A new <see cref="PrettyMemberOptions"/> instance with identical property values.
-	/// </returns>
-	public PrettyMemberOptions Clone()
-	{
-		var clone = (PrettyMemberOptions)MemberwiseClone();
-		clone.IsFrozen = false;
-		return clone;
-	}
-
-	#endregion
-
 	#region ToString()
 
 	/// <summary>
@@ -273,8 +222,8 @@ public sealed class PrettyMemberOptions
 		return
 			$"DeclaringType={IncludeDeclaringType}, Access={ShowAccessibility}, Mods={ShowMemberModifiers}, " +
 			$"Async={ShowAsyncForAsyncMethods}, ParamNames={ShowParameterNames}, Nullability={ShowNullabilityAnnotations}, " +
-			"Attrs={ShowAttributes}/{ShowParameterAttributes}, AttrMax={AttributeMaxElements}, WhereM={ShowGenericConstraintsOnMethods}, " +
-			$"WhereT={{ShowGenericConstraintsOnTypes}}, UseNs={{UseNamespaceForTypes}}, IsFrozen={IsFrozen}";
+			$"Attrs={ShowAttributes}/{ShowParameterAttributes}, AttrMax={AttributeMaxElements}, WhereM={ShowGenericConstraintsOnMethods}, " +
+			$"WhereT={ShowGenericConstraintsOnTypes}, UseNs={UseNamespaceForTypes}, IsFrozen={IsFrozen}";
 	}
 
 	#endregion

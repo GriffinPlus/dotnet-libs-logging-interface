@@ -20,11 +20,12 @@ namespace GriffinPlus.Lib.Logging;
 ///     or inclusion of assembly qualification.
 ///     </para>
 /// </remarks>
-public sealed class PrettyTypeOptions
+public sealed class PrettyTypeOptions : PrettyOptionsBase<PrettyTypeOptions>
 {
 	#region Properties
 
-	private bool mUseNamespace = false;
+	private bool mUseNamespace            = false;
+	private bool mUseNativeIntegerAliases = false;
 
 	/// <summary>
 	/// Gets or sets a value indicating whether namespace prefixes are included in formatted type names.
@@ -43,55 +44,23 @@ public sealed class PrettyTypeOptions
 		}
 	}
 
-	#endregion
-
-	#region Freeze Support
-
 	/// <summary>
-	/// Gets or sets a value indicating whether this options instance is frozen (read-only).
-	/// </summary>
-	public bool IsFrozen { get; private set; }
-
-	/// <summary>
-	/// Makes this options instance read-only. Subsequent attempts to mutate it will throw.
-	/// </summary>
-	/// <returns>
-	/// The frozen <see cref="PrettyTypeOptions"/> instance.
-	/// </returns>
-	public PrettyTypeOptions Freeze()
-	{
-		IsFrozen = true;
-		return this;
-	}
-
-	/// <summary>
-	/// Ensures that the current instance is mutable and can be modified.
+	/// Gets or sets a value indicating whether <see cref="IntPtr"/> and <see cref="UIntPtr"/>
+	/// are rendered using the C# native integer aliases <see cref="nint"/> and <see cref="nuint"/>.
 	/// </summary>
 	/// <remarks>
-	/// If the instance is frozen, an <see cref="InvalidOperationException"/> is thrown.
-	/// To modify a frozen instance, use the <see cref="Clone"/> method to create a mutable copy.
+	/// Defaults to <see langword="false"/> to preserve historic output. When set to <see langword="true"/>,
+	/// any appearance of <see cref="IntPtr"/> or <see cref="UIntPtr"/> (including within generic arguments,
+	/// by-ref types, arrays, and <c>Nullable&lt;T&gt;</c>) is formatted as <c>nint</c> / <c>nuint</c>.
 	/// </remarks>
-	/// <exception cref="InvalidOperationException">Thrown if the instance is frozen and cannot be modified.</exception>
-	private void EnsureMutable()
+	public bool UseNativeIntegerAliases
 	{
-		if (IsFrozen) throw new InvalidOperationException("Options instance is frozen. Clone() to modify.");
-	}
-
-	#endregion
-
-	#region Cloning
-
-	/// <summary>
-	/// Creates a deep unfrozen copy of this options instance.
-	/// </summary>
-	/// <returns>
-	/// A new <see cref="PrettyTypeOptions"/> instance with identical property values.
-	/// </returns>
-	public PrettyTypeOptions Clone()
-	{
-		var clone = (PrettyTypeOptions)MemberwiseClone();
-		clone.IsFrozen = false;
-		return clone;
+		get => mUseNativeIntegerAliases;
+		set
+		{
+			EnsureMutable();
+			mUseNativeIntegerAliases = value;
+		}
 	}
 
 	#endregion
@@ -103,7 +72,7 @@ public sealed class PrettyTypeOptions
 	/// </summary>
 	public override string ToString()
 	{
-		return $"UseNamespace={UseNamespace}";
+		return $"UseNamespace={UseNamespace}, UseNativeIntegerAliases={UseNativeIntegerAliases}";
 	}
 
 	#endregion

@@ -4,6 +4,7 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -23,43 +24,44 @@ static class PrettyAssemblyEngine
 	/// <summary>
 	/// Formats an <see cref="Assembly"/> to a summary string using the specified <paramref name="options"/>.
 	/// </summary>
-	/// <param name="assembly">
-	/// The assembly to format. If <see langword="null"/>, returns the literal string <c>"&lt;null&gt;"</c>.
-	/// </param>
-	/// <param name="options">
-	/// Options controlling which sections are included. Must not be <see langword="null"/>; callers should pass a preset.
-	/// </param>
-	/// <param name="tfc">
-	/// An optional <see cref="TextFormatContext"/> providing newline, indentation, and culture information.<br/>
-	/// If <see langword="null"/>, the engine uses platform defaults.
-	/// </param>
+	/// <param name="assembly">The assembly to format.</param>
+	/// <param name="options">Options controlling which sections are included.</param>
+	/// <param name="tfc">A <see cref="TextFormatContext"/> providing newline, indentation, and culture information.</param>
 	/// <returns>
 	/// A human-readable summary string. Depending on <paramref name="options"/>, this can be a multi-line text
 	/// including identity, image runtime, modules, referenced assemblies and (optionally) exported types.
 	/// </returns>
-	public static string FormatAssembly(Assembly? assembly, PrettyAssemblyOptions options, TextFormatContext? tfc = null)
+	/// <exception cref="ArgumentNullException">
+	/// Thrown if <paramref name="assembly"/> or <paramref name="options"/> is <see langword="null"/>.
+	/// </exception>
+	public static string FormatAssembly(Assembly assembly, PrettyAssemblyOptions options, TextFormatContext tfc)
 	{
-		if (assembly == null) return "<null>";
+		if (assembly == null) throw new ArgumentNullException(nameof(assembly));
 		if (options == null) throw new ArgumentNullException(nameof(options));
 
+		// Quick path: No details requested, just return the assembly identity.
+		if (options is { IncludeHeader: false, IncludeModules: false, IncludeReferences: false, IncludeExportedTypes: false })
+		{
+			return TextPostProcessor.ApplyWhole(FormatAssemblyName(assembly.GetName()), tfc);
+		}
+
 		var builder = new StringBuilder();
-		TextFormatContext tf = tfc ?? TextFormatContext.From(null);
 
 		// Header (identity + basic info)
 		if (options.IncludeHeader)
 		{
-			builder.Append(FormatAssemblyName(assembly.GetName())).Append(tf.NewLine);
+			builder.Append(FormatAssemblyName(assembly.GetName())).Append(tfc.NewLine);
 			if (options.IncludeImageRuntime)
 			{
 				string? imageRuntime = SafeGetImageRuntimeVersion(assembly);
 				if (!string.IsNullOrEmpty(imageRuntime))
-					builder.Append("ImageRuntime: ").Append(imageRuntime).Append(tf.NewLine);
+					builder.Append("ImageRuntime: ").Append(imageRuntime).Append(tfc.NewLine);
 			}
 			if (options.IncludeLocation)
 			{
 				string? location = SafeGetLocation(assembly);
 				if (!string.IsNullOrEmpty(location))
-					builder.Append("Location: ").Append(location).Append(tf.NewLine);
+					builder.Append("Location: ").Append(location).Append(tfc.NewLine);
 			}
 		}
 
@@ -70,10 +72,10 @@ static class PrettyAssemblyEngine
 			Array.Sort(modules, (a, b) => string.Compare(a.Name, b.Name, StringComparison.Ordinal));
 			if (modules.Length > 0)
 			{
-				builder.Append("Modules:").Append(tf.NewLine);
+				builder.Append("Modules:").Append(tfc.NewLine);
 				foreach (Module module in modules)
 				{
-					builder.Append("  - ").Append(FormatModule(module, options)).Append(tf.NewLine);
+					builder.Append("  - ").Append(FormatModule(module, options)).Append(tfc.NewLine);
 				}
 			}
 		}
@@ -85,16 +87,16 @@ static class PrettyAssemblyEngine
 			Array.Sort(references, (a, b) => string.Compare(a.FullName, b.FullName, StringComparison.Ordinal));
 			if (references.Length > 0)
 			{
-				builder.Append("References:").Append(tf.NewLine);
+				builder.Append("References:").Append(tfc.NewLine);
 				foreach (AssemblyName an in references)
 				{
-					builder.Append("  - ").Append(FormatAssemblyName(an)).Append(tf.NewLine);
+					builder.Append("  - ").Append(FormatAssemblyName(an)).Append(tfc.NewLine);
 				}
 			}
 		}
 
 		// Exported/Public types (optionally capped)
-		if (options.IncludeExportedTypes)
+		if (options.IncludeExportedTypes && options.ExportedTypesMax != 0)
 		{
 			Type[] types = SafeGetExportedTypes(assembly);
 			Array.Sort(types, (a, b) => string.Compare(a.FullName, b.FullName, StringComparison.Ordinal));
@@ -102,44 +104,50 @@ static class PrettyAssemblyEngine
 			if (types.Length > 0)
 			{
 				var typeOptions = new PrettyTypeOptions { UseNamespace = options.UseNamespaceForTypes };
-				builder.Append("Exported Types:").Append(tf.NewLine);
+				builder.Append("Exported Types:").Append(tfc.NewLine);
 
-				if (options.ExportedTypesMax > 0)
-				{
-					foreach (Type type in types.Take(options.ExportedTypesMax))
-					{
-						builder.Append("  - ").Append(PrettyTypeEngine.Format(type, typeOptions)).Append(tf.NewLine);
-					}
+				int limit = options.ExportedTypesMax;
+				IEnumerable<Type> typesToTake = types;
 
-					if (types.Length > options.ExportedTypesMax)
-						builder.Append("  …").Append(tf.NewLine);
-				}
-				else
+				// Apply limit if it's non-negative
+				if (limit >= 0)
 				{
-					foreach (Type type in types)
-					{
-						builder.Append("  - ").Append(PrettyTypeEngine.Format(type, typeOptions)).Append(tf.NewLine);
-					}
+					typesToTake = types.Take(limit);
 				}
+
+				foreach (Type type in typesToTake)
+				{
+					builder.Append("  - ");
+					PrettyTypeEngine.AppendType(builder, type, typeOptions, tfc);
+					builder.Append(tfc.NewLine);
+				}
+
+				if (limit >= 0 && types.Length > limit)
+					builder.Append("  …").Append(tfc.NewLine);
 			}
 		}
 
 		string s = builder.ToString().TrimEnd();
-		return TextPostProcessor.ApplyWhole(string.IsNullOrEmpty(s) ? FormatAssemblyName(assembly.GetName()) : s, tf);
+		return TextPostProcessor.ApplyWhole(string.IsNullOrEmpty(s) ? FormatAssemblyName(assembly.GetName()) : s, tfc);
 	}
 
 	/// <summary>
 	/// Formats an <see cref="AssemblyName"/> identity on a single line.
 	/// </summary>
-	/// <param name="name">The assembly identity. If <see langword="null"/>, returns <c>"&lt;null&gt;"</c>.</param>
+	/// <param name="name">The assembly identity.</param>
 	/// <returns>
 	/// A CLR-style identity such as <c>"MyLib, Version=1.2.3.4, Culture=neutral, PublicKeyToken=abcdef1234567890"</c>.
 	/// </returns>
-	public static string FormatAssemblyName(AssemblyName? name)
+	/// <exception cref="ArgumentNullException">
+	/// Thrown if <paramref name="name"/> is <see langword="null"/>.
+	/// </exception>
+	public static string FormatAssemblyName(AssemblyName name)
 	{
+		if (name == null) throw new ArgumentNullException(nameof(name));
+
 		try
 		{
-			return name?.ToString() ?? "<null>";
+			return name.ToString();
 		}
 		catch
 		{
@@ -148,13 +156,21 @@ static class PrettyAssemblyEngine
 	}
 
 	/// <summary>
-	/// Formats a <see cref="Module"/> concisely using its simple name, or <c>"&lt;null&gt;"</c> if <paramref name="module"/> is <see langword="null"/>.
+	/// Formats a <see cref="Module"/> concisely using its simple name.
 	/// </summary>
-	public static string FormatModule(Module? module, PrettyAssemblyOptions options)
+	/// <param name="module">The module to format.</param>
+	/// <param name="options">Options controlling the formatting.</param>
+	/// <exception cref="ArgumentNullException">
+	/// Thrown if <paramref name="module"/> or <paramref name="options"/> is <see langword="null"/>.
+	/// </exception>
+	public static string FormatModule(Module module, PrettyAssemblyOptions options)
 	{
+		if (module == null) throw new ArgumentNullException(nameof(module));
+		if (options == null) throw new ArgumentNullException(nameof(options));
+
 		try
 		{
-			return module?.Name ?? "<null>";
+			return module.Name;
 		}
 		catch
 		{

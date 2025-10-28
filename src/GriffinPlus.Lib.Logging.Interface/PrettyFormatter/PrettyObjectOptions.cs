@@ -3,29 +3,46 @@
 // The source code is licensed under the MIT license.
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-using System;
+using System.Collections.Generic;
 
 namespace GriffinPlus.Lib.Logging;
+
+/// <summary>
+/// Specifies how dictionary-like objects are rendered.
+/// </summary>
+public enum DictionaryFormat
+{
+	/// <summary>
+	/// Render entries as a list of tuples, e.g. <c>[(key1, val1), (key2, val2), ...]</c>.
+	/// </summary>
+	Tuples = 0,
+
+	/// <summary>
+	/// Render entries in the format <c>[key1 = value1, key2 = value2, ...]</c>.
+	/// </summary>
+	KeyEqualsValue = 1
+}
 
 /// <summary>
 /// Options that control how arbitrary objects are formatted for logging/diagnostics by the <see cref="PrettyObjectEngine"/>.
 /// </summary>
 /// <remarks>
-/// The options are mutable for convenience. Use <see cref="Clone"/> to create a safe copy when based on presets.
+/// The options are mutable for convenience.
+/// Use <see cref="PrettyOptionsBase{PrettyObjectOptions}.Clone"/> to create a safe copy when based on presets.
 /// </remarks>
-public sealed class PrettyObjectOptions
+public sealed class PrettyObjectOptions : PrettyOptionsBase<PrettyObjectOptions>
 {
 	#region Properties
 
-	private int  mMaxDepth             = 2;
-	private int  mMaxCollectionItems   = 5;
-	private int  mMaxStringLength      = 200;
-	private bool mIncludeFields        = true;
-	private bool mIncludeProperties    = true;
-	private bool mIncludeNonPublic     = false;
-	private bool mSortMembers          = true;
-	private bool mShowTypeHeader       = true;
-	private bool mUseNamespaceForTypes = false;
+	private int              mMaxDepth             = 2;
+	private int              mMaxCollectionItems   = 5;
+	private bool             mIncludeFields        = true;
+	private bool             mIncludeProperties    = true;
+	private bool             mIncludeNonPublic     = false;
+	private bool             mSortMembers          = true;
+	private bool             mShowTypeHeader       = true;
+	private bool             mUseNamespaceForTypes = false;
+	private DictionaryFormat mDictionaryFormat     = DictionaryFormat.KeyEqualsValue;
 
 	/// <summary>
 	/// Gets or sets the maximum recursion depth for nested objects/collections.<br/>
@@ -54,21 +71,6 @@ public sealed class PrettyObjectOptions
 		{
 			EnsureMutable();
 			mMaxCollectionItems = value;
-		}
-	}
-
-	/// <summary>
-	/// Gets or sets the maximum number of characters for string values.<br/>
-	/// Longer strings are truncated with an ellipsis.<br/>
-	/// A negative value removes the limit. Default is <c>200</c>.
-	/// </summary>
-	public int MaxStringLength
-	{
-		get => mMaxStringLength;
-		set
-		{
-			EnsureMutable();
-			mMaxStringLength = value;
 		}
 	}
 
@@ -156,55 +158,19 @@ public sealed class PrettyObjectOptions
 		}
 	}
 
-	#endregion
-
-	#region Freeze Support
-
 	/// <summary>
-	/// Gets or sets a value indicating whether this options instance is frozen (read-only).
+	/// Gets or sets the format that controls how <see cref="System.Collections.IDictionary"/> and
+	/// <see cref="IReadOnlyDictionary{TKey,TValue}"/> are rendered.<br/>
+	/// Default is <see cref="Logging.DictionaryFormat.KeyEqualsValue"/>.
 	/// </summary>
-	public bool IsFrozen { get; private set; }
-
-	/// <summary>
-	/// Makes this options instance read-only. Subsequent attempts to mutate it will throw.
-	/// </summary>
-	/// <returns>
-	/// The frozen <see cref="PrettyObjectOptions"/> instance.
-	/// </returns>
-	public PrettyObjectOptions Freeze()
+	public DictionaryFormat DictionaryFormat
 	{
-		IsFrozen = true;
-		return this;
-	}
-
-	/// <summary>
-	/// Ensures that the current instance is mutable and can be modified.
-	/// </summary>
-	/// <remarks>
-	/// If the instance is frozen, an <see cref="InvalidOperationException"/> is thrown.
-	/// To modify a frozen instance, use the <see cref="Clone"/> method to create a mutable copy.
-	/// </remarks>
-	/// <exception cref="InvalidOperationException">Thrown if the instance is frozen and cannot be modified.</exception>
-	private void EnsureMutable()
-	{
-		if (IsFrozen) throw new InvalidOperationException("Options instance is frozen. Clone() to modify.");
-	}
-
-	#endregion
-
-	#region Cloning
-
-	/// <summary>
-	/// Creates a deep unfrozen copy of this options instance.
-	/// </summary>
-	/// <returns>
-	/// A new <see cref="PrettyObjectOptions"/> instance with identical property values.
-	/// </returns>
-	public PrettyObjectOptions Clone()
-	{
-		var clone = (PrettyObjectOptions)MemberwiseClone();
-		clone.IsFrozen = false;
-		return clone;
+		get => mDictionaryFormat;
+		set
+		{
+			EnsureMutable();
+			mDictionaryFormat = value;
+		}
 	}
 
 	#endregion
@@ -216,8 +182,8 @@ public sealed class PrettyObjectOptions
 	/// </summary>
 	public override string ToString()
 	{
-		return $"Depth={MaxDepth}, Items={MaxCollectionItems}, StrMax={MaxStringLength}, " +
-		       $"Props={IncludeProperties}, Fields={IncludeFields}, NonPublic={IncludeNonPublic}, " +
+		return $"Depth={MaxDepth}, Items={MaxCollectionItems}, Props={IncludeProperties}, " +
+		       $"Fields={IncludeFields}, NonPublic={IncludeNonPublic}, " +
 		       $"Sort={SortMembers}, Header={ShowTypeHeader}, UseNs={UseNamespaceForTypes} " +
 		       $"IsFrozen={IsFrozen}";
 	}

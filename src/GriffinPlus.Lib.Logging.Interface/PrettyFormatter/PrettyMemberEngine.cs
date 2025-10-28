@@ -17,54 +17,76 @@ namespace GriffinPlus.Lib.Logging;
 ///     <para>
 ///     The member formatter emits full C#-style signatures, including parameter modifiers
 ///     (<c>ref</c>, <c>out</c>, <c>in</c>, <c>params</c>) and nullability suffixes when metadata allows.
-///     The underlying <see cref="PrettyTypeEngine"/> may represent ByRef types using the CLR suffix <c>&</c>,
+///     The underlying <see cref="PrettyTypeEngine"/> may represent ByRef types using the CLR suffix <c>&amp;</c>,
 ///     but does not itself add C# keywords.
 ///     </para>
 /// </remarks>
 static partial class PrettyMemberEngine
 {
 	/// <summary>
+	/// A boxed representation of the boolean value <see langword="true"/>.
+	/// </summary>
+	/// <remarks>
+	/// This field is used to avoid allocating multiple boxed instances of the <see langword="true"/>
+	/// value. It is intended for internal use where boxing of boolean values is required.
+	/// </remarks>
+	private static readonly object sTrueBox = true;
+
+	/// <summary>
+	/// A boxed representation of the boolean value <see langword="false"/>.
+	/// </summary>
+	/// <remarks>
+	/// This field is used to avoid allocating multiple boxed instances of the <see langword="false"/>
+	/// value. It is intended for internal use where boxing of boolean values is required.
+	/// </remarks>
+	private static readonly object sFalseBox = false;
+
+	/// <summary>
 	/// Formats a <see cref="MemberInfo"/> into a documentation-friendly, C#-like string according to <paramref name="options"/>.
 	/// </summary>
-	/// <param name="methodInfo">The member to format. If <see langword="null"/>, the literal string <c>"&lt;null&gt;"</c> is returned.</param>
+	/// <param name="memberInfo">The member to format. If <see langword="null"/>, the literal string <c>"&lt;null&gt;"</c> is returned.</param>
 	/// <param name="options">Formatting options controlling visibility, modifiers, attributes, constraints, and type rendering.</param>
+	/// <param name="tfc">A <see cref="TextFormatContext"/> providing newline, indentation, and culture information.</param>
 	/// <returns>
 	/// A single-line, human-readable signature for the member.
 	/// </returns>
-	public static string Format(MemberInfo? methodInfo, PrettyMemberOptions options)
+	/// <exception cref="ArgumentNullException">
+	/// Thrown if <paramref name="memberInfo"/> or <paramref name="options"/> is <see langword="null"/>.
+	/// </exception>
+	public static string Format(MemberInfo memberInfo, PrettyMemberOptions options, TextFormatContext tfc)
 	{
-		if (methodInfo == null)
-			return "<null>";
+		if (memberInfo == null) throw new ArgumentNullException(nameof(memberInfo));
+		if (options == null) throw new ArgumentNullException(nameof(options));
 
-		if (methodInfo is MethodInfo info) return FormatMethod(info, options);
-		if (methodInfo is ConstructorInfo constructorInfo) return FormatConstructor(constructorInfo, options);
-		if (methodInfo is PropertyInfo propertyInfo) return FormatProperty(propertyInfo, options);
-		if (methodInfo is FieldInfo fieldInfo) return FormatField(fieldInfo, options);
-		if (methodInfo is EventInfo eventInfo) return FormatEvent(eventInfo, options);
+		if (memberInfo is MethodInfo info) return FormatMethod(info, options, tfc);
+		if (memberInfo is ConstructorInfo constructorInfo) return FormatConstructor(constructorInfo, options, tfc);
+		if (memberInfo is PropertyInfo propertyInfo) return FormatProperty(propertyInfo, options, tfc);
+		if (memberInfo is FieldInfo fieldInfo) return FormatField(fieldInfo, options, tfc);
+		if (memberInfo is EventInfo eventInfo) return FormatEvent(eventInfo, options, tfc);
 
 		// If a Type arrives here, allow formatting it (including generic constraints if configured).
-		if (methodInfo is Type type)
+		PrettyTypeOptions typeOptions = options.UseNamespaceForTypes ? PrettyTypePresets.Full : PrettyTypePresets.Compact;
+		if (memberInfo is Type type)
 		{
-			var typeOptions = new PrettyTypeOptions { UseNamespace = options.UseNamespaceForTypes };
-			string head = PrettyTypeEngine.Format(type, typeOptions);
+			string head = PrettyTypeEngine.Format(type, typeOptions, tfc);
 
 			// Abort if generic constraints on types are not requested or the type is not a generic type definition.
 			if (!options.ShowGenericConstraintsOnTypes || !type.IsGenericTypeDefinition)
 				return head;
 
 			// Append generic constraints.
-			string where = BuildWhereClauses(type.GetGenericArguments(), options);
+			string where = BuildWhereClauses(type.GetGenericArguments(), options, tfc);
 			if (!string.IsNullOrEmpty(where)) head += " " + where;
 
 			return head;
 		}
 
 		// Fallback: just prefix with declaring type (if requested) and the raw name.
-		string prefix = options.IncludeDeclaringType && methodInfo.DeclaringType != null
-			                ? PrettyTypeEngine.Format(methodInfo.DeclaringType, new PrettyTypeOptions { UseNamespace = options.UseNamespaceForTypes }) + "."
+		string prefix = options.IncludeDeclaringType && memberInfo.DeclaringType != null
+			                ? PrettyTypeEngine.Format(memberInfo.DeclaringType, typeOptions, tfc) + "."
 			                : "";
 
-		return prefix + methodInfo.Name;
+		return prefix + memberInfo.Name;
 	}
 
 	/// <summary>
@@ -73,30 +95,38 @@ static partial class PrettyMemberEngine
 	/// <param name="parameterInfo">The parameter to format. If <see langword="null"/>, the literal string <c>"&lt;null&gt;"</c> is returned.</param>
 	/// <param name="options">Member formatting options (controls attributes, names, type namespace mode, etc.).</param>
 	/// <param name="owner">The owning <see cref="MethodBase"/>. May be <see langword="null"/>.</param>
+	/// <param name="tfc">A <see cref="TextFormatContext"/> providing newline, indentation, and culture information.</param>
 	/// <returns>
 	/// A formatted parameter segment, including modifiers and (optionally) the parameter name.
 	/// </returns>
 	/// <remarks>
 	/// The member formatter emits full C#-style signatures, including parameter modifiers
 	/// (<c>ref</c>, <c>out</c>, <c>in</c>, <c>params</c>) and nullability suffixes when metadata allows.
-	/// The underlying <see cref="PrettyTypeEngine"/> may represent ByRef types using the CLR suffix <c>&</c>,
+	/// The underlying <see cref="PrettyTypeEngine"/> may represent ByRef types using the CLR suffix <c>&amp;</c>,
 	/// but does not itself add C# keywords.
 	/// </remarks>
-	public static string Format(ParameterInfo? parameterInfo, PrettyMemberOptions options, MethodBase? owner)
+	/// <exception cref="ArgumentNullException">
+	/// Thrown if <paramref name="parameterInfo"/> or <paramref name="options"/> is <see langword="null"/>.
+	/// </exception>
+	public static string Format(
+		ParameterInfo       parameterInfo,
+		PrettyMemberOptions options,
+		MethodBase?         owner,
+		TextFormatContext   tfc)
 	{
-		if (parameterInfo == null) return "<null>";
+		if (parameterInfo == null) throw new ArgumentNullException(nameof(parameterInfo));
 		if (options == null) throw new ArgumentNullException(nameof(options));
 
 		GetParameterModifierAndType(parameterInfo, out string modifier, out Type coreType);
 
-		var typeOptions = new PrettyTypeOptions { UseNamespace = options.UseNamespaceForTypes };
-		string typeText = PrettyTypeEngine.Format(coreType, typeOptions);
+		PrettyTypeOptions typeOptions = options.UseNamespaceForTypes ? PrettyTypePresets.Full : PrettyTypePresets.Compact;
+		string typeText = PrettyTypeEngine.Format(coreType, typeOptions, tfc);
 
 		if (options.ShowNullabilityAnnotations && IsNullableReference(parameterInfo, coreType) && !typeText.EndsWith("?", StringComparison.Ordinal))
 			typeText += "?";
 
 		string namePart = options.ShowParameterNames && !string.IsNullOrEmpty(parameterInfo.Name) ? " " + parameterInfo.Name : "";
-		string attributes = options is { ShowAttributes: true, ShowParameterAttributes: true } ? FormatAttributes(parameterInfo, options) : "";
+		string attributes = options is { ShowAttributes: true, ShowParameterAttributes: true } ? FormatAttributes(parameterInfo, options, tfc) : "";
 		return (attributes + modifier + typeText + namePart).TrimStart();
 	}
 }

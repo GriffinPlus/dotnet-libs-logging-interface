@@ -41,34 +41,32 @@ static class PrettyObjectEngine
 	/// Must not be <see langword="null"/>.
 	/// </param>
 	/// <param name="tfc">
-	/// An optional <see cref="TextFormatContext"/> providing newline, indentation, and culture information.<br/>
-	/// If <see langword="null"/>, the engine uses platform defaults.
+	/// A <see cref="TextFormatContext"/> providing newline, indentation, and culture information.
 	/// </param>
 	/// <returns>
 	/// A single-line or multi-line string describing <paramref name="obj"/>.
 	/// </returns>
 	/// <exception cref="ArgumentNullException">
-	/// Thrown if <paramref name="options"/> is <see langword="null"/>.
+	/// Thrown if <paramref name="obj"/> or <paramref name="options"/> is <see langword="null"/>.
 	/// </exception>
-	public static string Format(object? obj, PrettyObjectOptions options, TextFormatContext? tfc = null)
+	public static string Format(object obj, PrettyObjectOptions options, TextFormatContext tfc)
 	{
-		if (obj == null) return "<null>";
+		if (obj == null) throw new ArgumentNullException(nameof(obj));
 		if (options == null) throw new ArgumentNullException(nameof(options));
 
 		var builder = new StringBuilder(512);
-		TextFormatContext tf = tfc ?? TextFormatContext.From(null);
 		var visited = new HashSet<object>(ReferenceComparer.Instance);
 		var typeOptions = new PrettyTypeOptions { UseNamespace = options.UseNamespaceForTypes };
 
 		if (options.ShowTypeHeader)
 		{
-			builder.Append(PrettyTypeEngine.Format(obj.GetType(), typeOptions));
+			PrettyTypeEngine.AppendType(builder, obj.GetType(), typeOptions, tfc);
 			if (options.MaxDepth <= 0) return builder.ToString();
 			builder.Append(": ");
 		}
 
-		AppendObject(builder, obj, options, depth: 0, visited, typeOptions, tf);
-		return TextPostProcessor.ApplyPerLine(builder.ToString(), tf);
+		AppendObject(builder, obj, options, depth: 0, visited, typeOptions, tfc);
+		return TextPostProcessor.ApplyPerLine(builder.ToString(), tfc);
 	}
 
 	// ───────────────────────── Core Rendering ─────────────────────────
@@ -116,13 +114,13 @@ static class PrettyObjectEngine
 		Type t = value.GetType();
 
 		// Primitives / simple values
-		if (TryAppendSimple(builder, value, t, options, tfc))
+		if (TryAppendSimple(builder, value, t, tfc))
 			return;
 
-		// IDictionary first (covers most map-like types)
-		if (value is IDictionary dict)
+		// Dictionary-like first (covers IDictionary, IDictionary<TKey,TValue>, IReadOnlyDictionary<,>, …)
+		if (DictionaryAdapter.TryCreate(value) is { } dictAdapter)
 		{
-			AppendDictionary(builder, dict, options, depth, visited, typeOptions, tfc);
+			AppendDictionary(builder, dictAdapter, value, options, depth, visited, typeOptions, tfc);
 			return;
 		}
 
@@ -145,12 +143,12 @@ static class PrettyObjectEngine
 	}
 
 	/// <summary>
-	/// Appends a compact rendering for primitive values, strings and enums.
+	/// Appends a compact, culture-aware rendering for primitives, strings, enums, and other known simple value types
+	/// (like <see cref="Guid"/>, <see cref="DateTime"/>, <see cref="TimeSpan"/>).
 	/// </summary>
 	/// <param name="builder">Target builder.</param>
 	/// <param name="value">Value to render.</param>
 	/// <param name="type">Runtime type of <paramref name="value"/>.</param>
-	/// <param name="options">Formatting options.</param>
 	/// <param name="tfc">
 	/// An optional <see cref="TextFormatContext"/> providing newline, indentation, and culture information.<br/>
 	/// If <see langword="null"/>, the engine uses platform defaults.
@@ -158,31 +156,56 @@ static class PrettyObjectEngine
 	/// <returns>
 	/// <see langword="true"/> if the value has been written; otherwise <see langword="false"/>.
 	/// </returns>
-	/// <remarks>
-	///     <para>
-	///     <b>Note on <c>byte[]</c> formatting:</b>
-	///     Byte arrays are handled as a dedicated special case. Instead of recursively formatting
-	///     each element, they are printed in a compact hexadecimal form with a length prefix,
-	///     for example <c>byte[5] { 0A, 1F, 2C, … }</c>.
-	///     This diverges from the generic array path for performance and readability reasons.
-	///     </para>
-	/// </remarks>
 	private static bool TryAppendSimple(
-		StringBuilder       builder,
-		object?             value,
-		Type                type,
-		PrettyObjectOptions options,
-		TextFormatContext   tfc)
+		StringBuilder     builder,
+		object?           value,
+		Type              type,
+		TextFormatContext tfc)
 	{
 		switch (value)
 		{
 			// String
 			case string s:
 				builder.Append('"');
-				if (options.MaxStringLength >= 0 && s.Length > options.MaxStringLength)
-					builder.Append(EscapeString(s.Substring(0, options.MaxStringLength))).Append('…');
-				else
-					builder.Append(EscapeString(s));
+
+				// DO NOT strip BiDi controls here.
+				// As this is a *quoted* string, we pass the original string 's'
+				// to AppendEscaped(), which will correctly visualize BiDi characters
+				// as \uXXXX, preserving data integrity.
+
+				if (!tfc.Truncate || tfc.MaxLineLength <= 0)
+				{
+					// No truncation path (0 allocs in AppendEscaped)
+					TextPostProcessor.AppendEscaped(builder, s, 0, s.Length);
+					builder.Append('"');
+					return true;
+				}
+
+				int cap = tfc.MaxLineLength;
+				// If grapheme count <= cap, write whole string
+				if (s.Length <= cap &&
+				    TextPostProcessor.SafePrefixCharCountByTextElements(s, 0, cap, s.Length) >= s.Length)
+				{
+					TextPostProcessor.AppendEscaped(builder, s, 0, s.Length);
+					builder.Append('"');
+					return true;
+				}
+
+				// Need to truncate: reserve space for marker (grapheme elements)
+				int markerElems = new StringInfo(tfc.TruncationMarker).LengthInTextElements;
+				int limit = cap - markerElems;
+				if (limit <= 0)
+				{
+					builder.Append(tfc.TruncationMarker);
+					builder.Append('"');
+					return true;
+				}
+
+				int safeChars = TextPostProcessor.SafePrefixCharCountByTextElements(s, 0, limit, s.Length);
+				if (safeChars > 0)
+					TextPostProcessor.AppendEscaped(builder, s, 0, safeChars);
+				builder.Append(tfc.TruncationMarker);
+
 				builder.Append('"');
 				return true;
 
@@ -193,7 +216,9 @@ static class PrettyObjectEngine
 
 			// Char
 			case char c:
-				builder.Append('\'').Append(EscapeChar(c)).Append('\'');
+				builder.Append('\'');
+				TextPostProcessor.AppendEscapedChar(builder, c);
+				builder.Append('\'');
 				return true;
 
 			// Numerics
@@ -243,121 +268,12 @@ static class PrettyObjectEngine
 	}
 
 	/// <summary>
-	/// Escapes a character for use in string literals by converting it to its escaped representation.
-	/// </summary>
-	/// <remarks>
-	/// This method handles common escape sequences such as backslashes, single quotes, and control
-	/// characters. For control characters not explicitly handled, the method returns a Unicode escape sequence in the
-	/// format <c>"\\uXXXX"</c>, where <c>XXXX</c> is the hexadecimal code of the character.
-	/// </remarks>
-	/// <param name="c">The character to escape.</param>
-	/// <returns>
-	/// A string containing the escaped representation of the character. For example, control characters are converted to
-	/// their escape sequences (e.g., <c>'\n'</c> becomes <c>"\\n"</c>), and other characters are returned as-is unless
-	/// they require escaping.
-	/// </returns>
-	private static string EscapeChar(char c)
-	{
-		// Escape unmatched surrogate code units to avoid ill-formed UTF-16 in output.
-		if (char.IsSurrogate(c))
-			return "\\u" + ((int)c).ToString("X4", CultureInfo.InvariantCulture);
-
-		return c switch
-		{
-			'\\' => "\\\\",
-			'\'' => "\\\'",
-			'\n' => "\\n",
-			'\r' => "\\r",
-			'\t' => "\\t",
-			var _ => char.IsControl(c)
-				         ? "\\u" + ((int)c).ToString("X4", CultureInfo.InvariantCulture)
-				         : c.ToString()
-		};
-	}
-
-	/// <summary>
-	/// Escapes special characters in a string using common C#-style escapes (\", \\, \n, \r, \t)
-	/// and \uXXXX for control characters. This keeps log output single-line and copy/paste friendly.
-	/// </summary>
-	/// <param name="input">The string to escape. Cannot be <see langword="null"/>.</param>
-	/// <returns>
-	/// A new string with special characters replaced by their escaped representations. For example, backslashes are
-	/// replaced with <c>\</c>, double quotes with <c>"</c>, and control characters with their Unicode escape sequences
-	/// (e.g., <c>\u000A</c> for a newline).
-	/// </returns>
-	private static string EscapeString(string input)
-	{
-		// --- Fast path ---
-
-		// Check for any character that *requires* escaping.
-		// If none are found, return the original string to avoid allocation.
-		bool needsEscaping = false;
-		for (int i = 0; i < input.Length; i++)
-		{
-			char c = input[i];
-			// Check for standard escapes, control chars, or any surrogates (which
-			// require logic to distinguish matched pairs from unmatched singles).
-			if (c is '\\' or '\"' or '\n' or '\r' or '\t' || char.IsControl(c) || char.IsSurrogate(c))
-			{
-				needsEscaping = true;
-				break;
-			}
-		}
-
-		if (!needsEscaping) return input;
-
-		// --- End fast path ---
-
-		var builder = new StringBuilder(input.Length + 8);
-
-		for (int i = 0; i < input.Length; i++)
-		{
-			char c = input[i];
-
-			// Surrogates: keep valid pairs as-is, escape unmatched code units.
-			if (char.IsHighSurrogate(c))
-			{
-				if (i + 1 < input.Length && char.IsLowSurrogate(input[i + 1]))
-				{
-					builder.Append(c).Append(input[i + 1]);
-					i++;
-					continue;
-				}
-				builder.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
-				continue;
-			}
-			if (char.IsLowSurrogate(c))
-			{
-				builder.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
-				continue;
-			}
-
-			switch (c)
-			{
-				case '\\': builder.Append("\\\\"); break;
-				case '\"': builder.Append("\\\""); break;
-				case '\n': builder.Append("\\n"); break;
-				case '\r': builder.Append("\\r"); break;
-				case '\t': builder.Append("\\t"); break;
-
-				default:
-					if (char.IsControl(c))
-						builder.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
-					else
-						builder.Append(c);
-					break;
-			}
-		}
-
-		return builder.ToString();
-	}
-
-	/// <summary>
 	/// Appends a dictionary value like <c>{ key1 = value1, key2 = value2, … } (Count = N)</c>.
 	/// Limits output per <paramref name="options"/>.
 	/// </summary>
 	/// <param name="builder">Target <see cref="StringBuilder"/>.</param>
-	/// <param name="dict">The dictionary to render.</param>
+	/// <param name="adapter">The dictionary adapter to access entries.</param>
+	/// <param name="instance">The dictionary instance.</param>
 	/// <param name="options">Formatting options (item limits, depth, type-name mode).</param>
 	/// <param name="depth">Current recursion depth.</param>
 	/// <param name="visited">Reference set used to detect and avoid cycles.</param>
@@ -368,33 +284,91 @@ static class PrettyObjectEngine
 	/// </param>
 	private static void AppendDictionary(
 		StringBuilder       builder,
-		IDictionary         dict,
+		IDictionaryAdapter  adapter,
+		object              instance,
 		PrettyObjectOptions options,
 		int                 depth,
 		HashSet<object>     visited,
 		PrettyTypeOptions   typeOptions,
 		TextFormatContext   tfc)
 	{
-		int count = dict.Count;
-		int max = options.MaxCollectionItems >= 0 ? Math.Min(count, options.MaxCollectionItems) : count;
+		int? knownCount = adapter.TryGetCount(instance);
+		int max = options.MaxCollectionItems >= 0 ? options.MaxCollectionItems : int.MaxValue;
 
 		builder.Append("{ ");
 		int i = 0;
-		foreach (DictionaryEntry entry in dict)
+		bool hasMore = false;
+
+		// Enumerate key-value pairs, sorting by key string representation if requested
+		IEnumerable<(object? Key, object? Value)> items = adapter.Enumerate(instance);
+		if (options.SortMembers) items = items.OrderBy(kv => KeyToInvariantOrdinalString(kv.Key), StringComparer.Ordinal);
+		bool tuple = options.DictionaryFormat == DictionaryFormat.Tuples;
+		foreach ((object? key, object? value) in items)
 		{
-			if (i > 0) builder.Append(", ");
+			if (i > 0 && i < max) builder.Append(", ");
 			if (i >= max)
 			{
-				builder.Append('…');
+				hasMore = true;
 				break;
 			}
 
-			AppendObject(builder, entry.Key, options, depth + 1, visited, typeOptions, tfc);
-			builder.Append(" = ");
-			AppendObject(builder, entry.Value, options, depth + 1, visited, typeOptions, tfc);
+			if (tuple) builder.Append('(');
+			AppendObject(builder, key, options, depth + 1, visited, typeOptions, tfc);
+			builder.Append(tuple ? ", " : " = ");
+			AppendObject(builder, value, options, depth + 1, visited, typeOptions, tfc);
+			if (tuple) builder.Append(')');
+
 			i++;
 		}
-		builder.Append(" } (Count = ").Append(count).Append(")");
+
+		if (hasMore)
+		{
+			if (i > 0) builder.Append(", ");
+			builder.Append('…');
+		}
+
+		builder.Append(" }");
+
+		// Append count information
+		if (knownCount.HasValue)
+			builder.Append(" (Count = ").Append(knownCount.Value.ToString(tfc.Culture)).Append(')');
+		else if (hasMore)
+			builder.Append(" (Count ≥ ").Append((i + 1).ToString(tfc.Culture)).Append(')');
+		else
+			builder.Append(" (Count = ").Append(i.ToString(tfc.Culture)).Append(')');
+	}
+
+	/// <summary>
+	/// Converts the specified key to its invariant string representation using ordinal formatting.
+	/// </summary>
+	/// <param name="key">The object to convert. Can be <see langword="null"/>.</param>
+	/// <returns>
+	/// A string representation of the key formatted using the invariant culture.
+	/// Returns an empty string if <paramref name="key"/> is <see langword="null"/> or if an error occurs during conversion.
+	/// </returns>
+	/// <remarks>
+	/// If the key implements <see cref="IFormattable"/>, its <see cref="IFormattable.ToString(string?, IFormatProvider?)"/>
+	/// method is used with the invariant culture. Otherwise, the key's <see cref="object.ToString"/> method is used.
+	/// Any bidirectional control characters are stripped from the resulting string.
+	/// </remarks>
+	private static string KeyToInvariantOrdinalString(object? key)
+	{
+		if (key == null) return string.Empty;
+		try
+		{
+			if (key is IFormattable f)
+			{
+				// ReSharper disable once NullCoalescingConditionIsAlwaysNotNullAccordingToAPIContract
+				return TextPostProcessor.StripBiDiControls(f.ToString(null, CultureInfo.InvariantCulture) ?? string.Empty);
+			}
+
+			// ReSharper disable once NullCoalescingConditionIsAlwaysNotNullAccordingToAPIContract
+			return TextPostProcessor.StripBiDiControls(key.ToString() ?? string.Empty);
+		}
+		catch
+		{
+			return string.Empty;
+		}
 	}
 
 	/// <summary>
@@ -426,31 +400,18 @@ static class PrettyObjectEngine
 	/// <remarks>
 	///     <para>
 	///     For one-dimensional arrays the method prints a flat initializer-like list of elements, limited
-	///     by <see cref="PrettyObjectOptions.MaxCollectionItems"/> if configured.
+	///     by <see cref="PrettyObjectOptions.MaxCollectionItems"/> if configured (e.g., <c>Int32[3] { 1, 2, 3 }</c>).
 	///     </para>
 	///     <para>
 	///     Multidimensional arrays are rendered as <c>TypeName[Dim1×Dim2×…] { … }</c> without enumerating
-	///     individual elements, to avoid excessive output and complexity.
+	///     individual elements (e.g., <c>String[2×4] { … }</c>).
 	///     </para>
 	///     <para>
-	///     Example outputs:
-	///     <list type="bullet">
-	///         <item>
-	///             <description>
-	///                 <c>Int32[3] { 1, 2, 3 }</c>
-	///             </description>
-	///         </item>
-	///         <item>
-	///             <description>
-	///                 <c>String[2×4] { … }</c>
-	///             </description>
-	///         </item>
-	///         <item>
-	///             <description>
-	///                 <c>Byte[5] { 10, 20, 30, … }</c>
-	///             </description>
-	///         </item>
-	///     </list>
+	///     <b>Note on <c>byte[]</c>:</b>
+	///     Byte arrays are handled as a dedicated special case. Instead of formatting each <c>byte</c>
+	///     as a number, they are printed in a compact hexadecimal form with a length prefix
+	///     (e.g., <c>byte[5] { 0x0A, 0x1F, 0x2C, … }</c>).
+	///     This diverges from the generic 1D array path for performance and readability.
 	///     </para>
 	/// </remarks>
 	private static void AppendArray(
@@ -471,7 +432,7 @@ static class PrettyObjectEngine
 			for (int i = 0; i < show; i++)
 			{
 				if (i > 0) builder.Append(", ");
-				builder.Append(bytes[i].ToString("X2", CultureInfo.InvariantCulture));
+				builder.Append("0x").Append(bytes[i].ToString("X2", CultureInfo.InvariantCulture));
 			}
 			if (show < count) builder.Append(", …");
 			builder.Append(" }");
@@ -481,7 +442,7 @@ static class PrettyObjectEngine
 		// --- Existing logic for all other array types ---
 
 		Type elementType = array.GetType().GetElementType() ?? typeof(object);
-		builder.Append(PrettyTypeEngine.Format(elementType, typeOptions));
+		PrettyTypeEngine.AppendType(builder, elementType, typeOptions, tfc);
 		builder.Append("[");
 
 		// Ranks like 3×4×2
@@ -610,32 +571,77 @@ static class PrettyObjectEngine
 	/// Composite cache key for <see cref="sMemberCache"/>.
 	/// Includes Type and the options that change reflection results.
 	/// </summary>
-	private readonly struct MemberCacheKey(Type type, bool includeNonPublic, bool sortMembers) :
-		IEquatable<MemberCacheKey>
+	private readonly struct InnerMemberCacheKey(bool includeNonPublic, bool sortMembers) :
+		IEquatable<InnerMemberCacheKey>
 	{
-		public readonly Type Type             = type;
+		/// <summary>
+		/// Indicates whether non-public members should be included.
+		/// </summary>
 		public readonly bool IncludeNonPublic = includeNonPublic;
-		public readonly bool SortMembers      = sortMembers;
 
-		public bool Equals(MemberCacheKey other) => Type == other.Type &&
-		                                            IncludeNonPublic == other.IncludeNonPublic &&
-		                                            SortMembers == other.SortMembers;
+		/// <summary>
+		/// Indicates whether members should be sorted.
+		/// </summary>
+		public readonly bool SortMembers = sortMembers;
 
-		public override bool Equals(object? obj) => obj is MemberCacheKey other && Equals(other);
+		/// <summary>
+		/// Determines whether the current instance is equal to another instance of <see cref="InnerMemberCacheKey"/>.
+		/// </summary>
+		/// <param name="other">The <see cref="InnerMemberCacheKey"/> instance to compare with the current instance.</param>
+		/// <returns>
+		/// <see langword="true"/> if the specified instance has the same values for <see cref="IncludeNonPublic"/>
+		/// and <see cref="SortMembers"/> as the current instance; otherwise, <see langword="false"/>.
+		/// </returns>
+		public bool Equals(InnerMemberCacheKey other)
+		{
+			return IncludeNonPublic == other.IncludeNonPublic &&
+			       SortMembers == other.SortMembers;
+		}
 
+		/// <summary>
+		/// Determines whether the specified object is equal to the current instance.
+		/// </summary>
+		/// <param name="obj">The object to compare with the current instance. Can be <see langword="null"/>.</param>
+		/// <returns>
+		/// <see langword="true"/> if the specified object is of the same type and represents the same value as the current
+		/// instance; otherwise, <see langword="false"/>.
+		/// </returns>
+		public override bool Equals(object? obj)
+		{
+			return obj is InnerMemberCacheKey other && Equals(other);
+		}
+
+		/// <summary>
+		/// Computes a hash code for the current object.
+		/// </summary>
+		/// <remarks>
+		/// The hash code is calculated using the values of the <see cref="IncludeNonPublic"/> and <see cref="SortMembers"/>
+		/// properties. This ensures that objects with the same configuration produce the same hash code.
+		/// </remarks>
+		/// <returns>
+		/// An integer representing the hash code of the current object.
+		/// </returns>
 		public override int GetHashCode()
 		{
 			unchecked // Overflow is fine
 			{
-				int hash = Type.GetHashCode();
-				hash = (hash * 397) ^ IncludeNonPublic.GetHashCode();
+				int hash = IncludeNonPublic.GetHashCode();
 				hash = (hash * 397) ^ SortMembers.GetHashCode();
 				return hash;
 			}
 		}
 	}
 
-	private static readonly ConcurrentDictionary<MemberCacheKey, CachedTypeMembers> sMemberCache = new();
+	/// <summary>
+	/// A thread-safe cache that maps a <see cref="Type"/> to a <see cref="ConcurrentDictionary{TKey,TValue}"/>
+	/// containing cached member information for that type.
+	/// </summary>
+	/// <remarks>
+	/// This cache uses a <see cref="ConditionalWeakTable{TKey,TValue}"/> to ensure that the cached data
+	/// is automatically removed when the associated <see cref="Type"/> is no longer referenced. The inner dictionary
+	/// stores cached member data, keyed by <see cref="InnerMemberCacheKey"/>.
+	/// </remarks>
+	private static readonly ConditionalWeakTable<Type, ConcurrentDictionary<InnerMemberCacheKey, CachedTypeMembers>> sMemberCache = new();
 
 	/// <summary>
 	/// Appends a POCO-style object by rendering its selected properties and fields in a compact initializer-like form.
@@ -669,27 +675,28 @@ static class PrettyObjectEngine
 		if (depth >= options.MaxDepth)
 		{
 			// Just show the type name at depth limit.
-			builder.Append(PrettyTypeEngine.Format(type, typeOptions));
+			PrettyTypeEngine.AppendType(builder, type, typeOptions, tfc);
 			return;
 		}
 
-		// Create the composite key based on type and relevant options.
-		var cacheKey = new MemberCacheKey(type, options.IncludeNonPublic, options.SortMembers);
+		ConcurrentDictionary<InnerMemberCacheKey, CachedTypeMembers> nestedDict = sMemberCache.GetValue(
+			type,
+			static _ => new ConcurrentDictionary<InnerMemberCacheKey, CachedTypeMembers>());
+
+		var innerKey = new InnerMemberCacheKey(options.IncludeNonPublic, options.SortMembers);
 
 		// Get members from cache or load them via GetOrAdd().
-		CachedTypeMembers members = sMemberCache.GetOrAdd(
-			cacheKey,
+		CachedTypeMembers members = nestedDict.GetOrAdd(
+			innerKey,
 			key =>
 			{
 				BindingFlags flags = BindingFlags.Instance | BindingFlags.Public;
-				if (key.IncludeNonPublic) flags |= BindingFlags.NonPublic; // Use key. not options.
+				if (key.IncludeNonPublic) flags |= BindingFlags.NonPublic;
+				PropertyInfo[] properties = type.GetProperties(flags);
+				FieldInfo[] fields = type.GetFields(flags);
 
-				PropertyInfo[] properties = key.Type.GetProperties(flags); // Use key.Type not type
-				FieldInfo[] fields = key.Type.GetFields(flags);            // Use key.Type not type
-
-				if (key.SortMembers) // Use key. not options.
+				if (key.SortMembers)
 				{
-					// Use Array.Sort for in-place sorting, avoiding LINQ allocations
 					Array.Sort(properties, (a, b) => string.Compare(a.Name, b.Name, StringComparison.Ordinal));
 					Array.Sort(fields, (a,     b) => string.Compare(a.Name, b.Name, StringComparison.Ordinal));
 				}
@@ -710,18 +717,7 @@ static class PrettyObjectEngine
 
 				if (!isFirst) builder.Append(", ");
 				builder.Append(property.Name).Append(" = ");
-
-				object? propertyValue;
-				try
-				{
-					propertyValue = property.GetValue(value, index: null);
-				}
-				catch (TargetInvocationException ex) when (ex.InnerException != null)
-				{
-					propertyValue = "!" + ex.InnerException.GetType().Name;
-				}
-				catch (Exception ex) { propertyValue = "!" + ex.GetType().Name; }
-
+				object? propertyValue = GetMemberValue(value, property);
 				AppendObject(builder, propertyValue, options, depth + 1, visited, typeOptions, tfc);
 				isFirst = false;
 			}
@@ -730,33 +726,85 @@ static class PrettyObjectEngine
 		if (options.IncludeFields)
 		{
 			// Iterate over the cached members.Fields
-			foreach (FieldInfo f in members.Fields)
+			foreach (FieldInfo fieldInfo in members.Fields)
 			{
 				if (!isFirst) builder.Append(", ");
-				builder.Append(f.Name).Append(" = ");
-
-				object? propertyValue;
-				try
-				{
-					propertyValue = f.GetValue(value);
-				}
-				catch (TargetInvocationException ex) when (ex.InnerException != null)
-				{
-					propertyValue = "!" + ex.InnerException.GetType().Name;
-				}
-				catch (Exception ex) { propertyValue = "!" + ex.GetType().Name; }
-
-				AppendObject(builder, propertyValue, options, depth + 1, visited, typeOptions, tfc);
+				builder.Append(fieldInfo.Name).Append(" = ");
+				object? fieldValue = GetMemberValue(value, fieldInfo);
+				AppendObject(builder, fieldValue, options, depth + 1, visited, typeOptions, tfc);
 				isFirst = false;
 			}
 		}
 
 		builder.Append(" }");
+		return;
+
+		// Safely retrieves the value of a property or field, returning an error message string on failure.
+		static object? GetMemberValue(object value, MemberInfo member)
+		{
+			try
+			{
+				if (member is PropertyInfo pi) return pi.GetValue(value, index: null);
+				if (member is FieldInfo fi) return fi.GetValue(value);
+			}
+			catch (TargetInvocationException ex) when (ex.InnerException != null)
+			{
+				return "!" + ex.InnerException.GetType().Name;
+			}
+			catch (Exception ex)
+			{
+				return "!" + ex.GetType().Name;
+			}
+
+			// Should not happen if member is PropertyInfo or FieldInfo
+			return "!(Unsupported MemberType)";
+		}
 	}
 
 	// ───────────────────────── TryGetKnownCount() Cache ─────────────────────────
 
-	private static readonly ConcurrentDictionary<Type, Func<object, int>?> sReadOnlyCountGetterCache = new();
+	/// <summary>
+	/// Represents a container for a function that retrieves an integer value based on an input object.
+	/// </summary>
+	/// <remarks>
+	/// This class is used to encapsulate a getter function that can be invoked to retrieve an integer
+	/// value. If no getter function is provided, the <see cref="None"/> singleton instance is used to
+	/// represent the absence of a getter.
+	/// </remarks>
+	private sealed class CountAccessorHolder
+	{
+		internal static readonly CountAccessorHolder None = new(null);
+		internal readonly        Func<object, int>?  Getter;
+
+		/// <summary>
+		/// Initializes a new instance of the <see cref="CountAccessorHolder"/> class with the specified getter function.
+		/// </summary>
+		/// <param name="getter">
+		/// A function that retrieves an integer value based on an input object,
+		/// or <see langword="null"/> if no getter is provided.
+		/// </param>
+		private CountAccessorHolder(Func<object, int>? getter)
+		{
+			Getter = getter;
+		}
+
+		/// <summary>
+		/// Creates a holder for a getter or returns the <see cref="None"/> singleton
+		/// to represent the absence of a getter. Never returns null.
+		/// </summary>
+		internal static CountAccessorHolder From(Func<object, int>? getter) => getter is null ? None : new CountAccessorHolder(getter);
+	}
+
+	/// <summary>
+	/// A thread-safe cache that associates a <see cref="Type"/> with its corresponding  <see cref="CountAccessorHolder"/>
+	/// instance.
+	/// </summary>
+	/// <remarks>
+	/// This cache is used to store and retrieve precomputed accessors for types, enabling efficient
+	/// access to count-related metadata. The use of <see cref="ConditionalWeakTable{TKey, TValue}"/>
+	/// ensures that entries are automatically removed when the associated key is no longer referenced.
+	/// </remarks>
+	private static readonly ConditionalWeakTable<Type, CountAccessorHolder> sReadOnlyCountGetterCache = new();
 
 	private static int? TryGetKnownCount(IEnumerable enumerable)
 	{
@@ -767,20 +815,40 @@ static class PrettyObjectEngine
 		// IReadOnlyCollection<T>:
 		// Get accessor delegate from cache, create new one, if necessary.
 		Type type = enumerable.GetType();
-		Func<object, int>? getter = sReadOnlyCountGetterCache.GetOrAdd(type, BuildReadOnlyCountGetter);
-		if (getter != null)
-		{
-			try { return getter(enumerable); }
-			catch
-			{
-				/* defensive */
-			}
-		}
 
-		// No count available.
-		return null;
+		// Get or create Count-accessor holder for the type.
+		CountAccessorHolder holder = sReadOnlyCountGetterCache.GetValue(
+			type,
+			static t => CountAccessorHolder.From(BuildReadOnlyCountGetter(t)));
+
+		// Invoke the getter, if available.
+		if (holder.Getter is null) return null;
+		try { return holder.Getter(enumerable); }
+		catch { return null; } // defensive
 	}
 
+	/// <summary>
+	/// Creates a delegate that retrieves the <see cref="IReadOnlyCollection{T}.Count"/> property of an
+	/// <see cref="IReadOnlyCollection{T}"/> implemented by the specified type.
+	/// </summary>
+	/// <param name="concreteType">The type to inspect for an implementation of <see cref="IReadOnlyCollection{T}"/>.</param>
+	/// <returns>
+	/// A compiled delegate that takes an object and returns the value of its <c>Count</c> property if the object
+	/// implements <see cref="IReadOnlyCollection{T}"/>; otherwise, <see langword="null"/>.
+	/// </returns>
+	/// <remarks>
+	///     <para>
+	///     This method inspects the provided type to determine if it implements <see cref="IReadOnlyCollection{T}"/>.
+	///     If such an interface is found, it generates and compiles a lambda expression to access the
+	///     <see cref="IReadOnlyCollection{T}.Count"/> property. The resulting delegate can be used to retrieve the count
+	///     of elements in an object implementing <see cref="IReadOnlyCollection{T}"/> without requiring compile-time
+	///     knowledge of the collection's generic type.
+	///     </para>
+	///     <para>
+	///     If the type does not implement <see cref="IReadOnlyCollection{T}"/> or if the delegate cannot
+	///     be compiled (e.g., due to security restrictions or trimming scenarios), the method returns <see langword="null"/>.
+	///     </para>
+	/// </remarks>
 	private static Func<object, int>? BuildReadOnlyCountGetter(Type concreteType)
 	{
 		// find the concrete IReadOnlyCollection<T>-Interface of the type
@@ -801,9 +869,10 @@ static class PrettyObjectEngine
 		}
 		catch
 		{
-			// extremely rare case (e.g. security/trimming edge cases)
-			// => proceed without getter...
-			return null;
+			// Extremely rare case (e.g. security/trimming edge cases)...
+			// Fallback: Return a delegate that uses reflection to get the value.
+			var countProperty = (PropertyInfo)prop.Member;
+			return obj => (int)countProperty.GetValue(obj)!;
 		}
 	}
 

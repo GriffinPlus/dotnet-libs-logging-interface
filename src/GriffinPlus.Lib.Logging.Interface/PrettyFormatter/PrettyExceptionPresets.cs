@@ -28,9 +28,10 @@ public static class PrettyExceptionPresets
 		IncludeStackTrace = true,
 		StackFrameLimit = 20,
 		IncludeData = false,
-		DataMaxItems = 0,
+		DataMaxItems = 0, // no data items
 		FlattenAggregates = true,
-		MaxInnerExceptionDepth = 2
+		MaxInnerExceptionDepth = 2,
+		DataDictionaryFormat = DictionaryFormat.KeyEqualsValue
 	}.Freeze();
 
 	/// <summary>
@@ -49,7 +50,8 @@ public static class PrettyExceptionPresets
 		IncludeData = true,
 		DataMaxItems = 10,
 		FlattenAggregates = true,
-		MaxInnerExceptionDepth = 4
+		MaxInnerExceptionDepth = 4,
+		DataDictionaryFormat = DictionaryFormat.KeyEqualsValue
 	}.Freeze();
 
 	/// <summary>
@@ -64,10 +66,11 @@ public static class PrettyExceptionPresets
 		IncludeHelpLink = true,
 		IncludeTargetSite = true,
 		IncludeStackTrace = true,
-		StackFrameLimit = 0, // unlimited
+		StackFrameLimit = PrettyExceptionOptions.Unlimited,
 		IncludeData = true,
-		DataMaxItems = 0, // unlimited
+		DataMaxItems = PrettyExceptionOptions.Unlimited,
 		FlattenAggregates = true,
-		MaxInnerExceptionDepth = 16
+		MaxInnerExceptionDepth = 16,
+		DataDictionaryFormat = DictionaryFormat.KeyEqualsValue
 	}.Freeze();
 }

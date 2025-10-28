@@ -25,6 +25,7 @@ public static class PrettyAssemblyPresets
 		IncludeModules = false,
 		IncludeReferences = false,
 		IncludeExportedTypes = false,
+		ExportedTypesMax = 0, // Value is irrelevant as IncludeExportedTypes is false
 		UseNamespaceForTypes = false
 	}.Freeze();
 
@@ -40,6 +41,7 @@ public static class PrettyAssemblyPresets
 		IncludeModules = true,
 		IncludeReferences = true,
 		IncludeExportedTypes = false,
+		ExportedTypesMax = 0, // Value is irrelevant as IncludeExportedTypes is false
 		UseNamespaceForTypes = true
 	}.Freeze();
 
@@ -55,7 +57,7 @@ public static class PrettyAssemblyPresets
 		IncludeModules = true,
 		IncludeReferences = true,
 		IncludeExportedTypes = true,
-		ExportedTypesMax = 0,
+		ExportedTypesMax = PrettyAssemblyOptions.Unlimited,
 		UseNamespaceForTypes = true
 	}.Freeze();
 
@@ -72,7 +74,7 @@ public static class PrettyAssemblyPresets
 		IncludeModules = true,
 		IncludeReferences = true,
 		IncludeExportedTypes = true,
-		ExportedTypesMax = 0,
+		ExportedTypesMax = PrettyAssemblyOptions.Unlimited,
 		UseNamespaceForTypes = true
 	}.Freeze();
 }

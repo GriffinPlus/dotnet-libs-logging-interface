@@ -25,7 +25,7 @@ namespace GriffinPlus.Lib.Logging;
 ///     right before rendering.
 ///     </para>
 /// </remarks>
-public sealed class PrettyOptions
+public sealed class PrettyOptions : PrettyOptionsBase<PrettyOptions>
 {
 	#region Properties
 
@@ -211,38 +211,20 @@ public sealed class PrettyOptions
 	#region Freeze Support
 
 	/// <summary>
-	/// Gets or sets a value indicating whether this options instance is frozen (read-only).
-	/// </summary>
-	public bool IsFrozen { get; private set; }
-
-	/// <summary>
 	/// Makes this options instance read-only. Subsequent attempts to mutate it will throw.
 	/// </summary>
 	/// <returns>
 	/// The frozen <see cref="PrettyOptions"/> instance.
 	/// </returns>
-	public PrettyOptions Freeze()
+	public override PrettyOptions Freeze()
 	{
+		base.Freeze();
 		mTypeOptions?.Freeze();
 		mMemberOptions?.Freeze();
 		mObjectOptions?.Freeze();
 		mExceptionOptions?.Freeze();
 		mAssemblyOptions?.Freeze();
-		IsFrozen = true;
 		return this;
-	}
-
-	/// <summary>
-	/// Ensures that the current instance is mutable and can be modified.
-	/// </summary>
-	/// <remarks>
-	/// If the instance is frozen, an <see cref="InvalidOperationException"/> is thrown.
-	/// To modify a frozen instance, use the <see cref="Clone"/> method to create a mutable copy.
-	/// </remarks>
-	/// <exception cref="InvalidOperationException">Thrown if the instance is frozen and cannot be modified.</exception>
-	private void EnsureMutable()
-	{
-		if (IsFrozen) throw new InvalidOperationException("Options instance is frozen. Clone() to modify.");
 	}
 
 	#endregion
@@ -255,15 +237,14 @@ public sealed class PrettyOptions
 	/// <returns>
 	/// A new <see cref="PrettyOptions"/> instance with identical property values.
 	/// </returns>
-	public PrettyOptions Clone()
+	public override PrettyOptions Clone()
 	{
-		var clone = (PrettyOptions)MemberwiseClone();
+		PrettyOptions clone = base.Clone();
 		clone.mTypeOptions = mTypeOptions?.Clone();
 		clone.mMemberOptions = mMemberOptions?.Clone();
 		clone.mObjectOptions = mObjectOptions?.Clone();
 		clone.mExceptionOptions = mExceptionOptions?.Clone();
 		clone.mAssemblyOptions = mAssemblyOptions?.Clone();
-		clone.IsFrozen = false;
 		return clone;
 	}
 
@@ -276,13 +257,14 @@ public sealed class PrettyOptions
 	/// </summary>
 	public override string ToString()
 	{
-		return $"Culture={Culture?.Name ?? "<null>"}, Indent={Indent ?? "<null>"}, NewLine={(NewLine == null ? "<null>" : "set")}, " +
-		       $"MaxLineLen={MaxLineLength?.ToString() ?? "<null>"}, Truncate={TruncateLongStrings?.ToString() ?? "<null>"}, " +
-		       $"Marker={TruncationMarker ?? "<null>"}, " +
-		       $"Type={(TypeOptions == null ? "<null>" : TypeOptions.ToString())}, " +
-		       $"Member={(MemberOptions == null ? "<null>" : MemberOptions.ToString())}, " +
-		       $"Object={(ObjectOptions == null ? "<null>" : ObjectOptions.ToString())}, " +
-		       $"Exception={(ExceptionOptions == null ? "<null>" : ExceptionOptions.ToString())}, " +
+		string indent = Indent != null ? "'" + Indent + "'" : "<null>";
+		return $"Culture={Culture?.Name ?? "<null>"}, Indent={indent}, NewLine={(NewLine == null ? "<null>" : "set")}, " +
+		       $"MaxLineLength={MaxLineLength?.ToString() ?? "<null>"}, Truncate={TruncateLongStrings?.ToString() ?? "<null>"}, " +
+		       $"Marker={TruncationMarker ?? "<null>"},\n" +
+		       $"Type={(TypeOptions == null ? "<null>" : TypeOptions.ToString())},\n" +
+		       $"Member={(MemberOptions == null ? "<null>" : MemberOptions.ToString())},\n" +
+		       $"Object={(ObjectOptions == null ? "<null>" : ObjectOptions.ToString())},\n" +
+		       $"Exception={(ExceptionOptions == null ? "<null>" : ExceptionOptions.ToString())},\n" +
 		       $"Assembly={(AssemblyOptions == null ? "<null>" : AssemblyOptions.ToString())}";
 	}
 

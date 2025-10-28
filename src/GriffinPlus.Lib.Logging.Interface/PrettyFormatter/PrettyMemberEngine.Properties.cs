@@ -1,22 +1,36 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 // ReSharper disable ForCanBeConvertedToForeach
+// ReSharper disable LoopCanBeConvertedToQuery
 
 namespace GriffinPlus.Lib.Logging;
 
 static partial class PrettyMemberEngine
 {
 	/// <summary>
+	/// A thread-safe cache that associates <see cref="MethodInfo"/> instances with corresponding objects.
+	/// </summary>
+	/// <remarks>
+	/// This cache is implemented using <see cref="ConditionalWeakTable{TKey,TValue}"/>, which ensures that the objects
+	/// stored in the cache are eligible for garbage collection when their associated keys (<see cref="MethodInfo"/> instances)
+	/// are no longer referenced elsewhere.
+	/// </remarks>
+	private static readonly ConditionalWeakTable<MethodInfo, object> sInitOnlyCache = new();
+
+	/// <summary>
 	/// Formats a property or indexer. Indexers are printed as <c>this[...]</c> and include accessors.
 	/// </summary>
 	/// <param name="propertyInfo">The property to format.</param>
 	/// <param name="options">Member formatting options.</param>
+	/// <param name="tfc">A <see cref="TextFormatContext"/> providing newline, indentation, and culture information.</param>
 	/// <returns>
 	/// A single-line representation of the property or indexer.
 	/// </returns>
-	private static string FormatProperty(PropertyInfo propertyInfo, PrettyMemberOptions options)
+	private static string FormatProperty(PropertyInfo propertyInfo, PrettyMemberOptions options, TextFormatContext tfc)
 	{
 		var builder = new StringBuilder();
 
@@ -24,11 +38,15 @@ static partial class PrettyMemberEngine
 		MethodInfo? setMethod = propertyInfo.SetMethod;
 		MethodInfo? accessor = getMethod ?? setMethod;
 
-		if (options.ShowAttributes) builder.Append(FormatAttributes(propertyInfo, options));
+		PrettyTypeOptions typeOptions = options.UseNamespaceForTypes ? PrettyTypePresets.Full : PrettyTypePresets.Compact;
+		if (options.ShowAttributes) builder.Append(FormatAttributes(propertyInfo, options, tfc));
 		if (options.ShowAccessibility && accessor != null) builder.Append(GetAccessibility(accessor)).Append(' ');
-		if (options.ShowMemberModifiers && accessor != null) builder.Append(GetMemberModifiers(accessor));
+		if (options.ShowMemberModifiers && accessor != null) AppendMemberModifiers(builder, accessor);
 		if (options.IncludeDeclaringType && propertyInfo.DeclaringType != null)
-			builder.Append(PrettyTypeEngine.Format(propertyInfo.DeclaringType, new PrettyTypeOptions { UseNamespace = options.UseNamespaceForTypes })).Append('.');
+		{
+			PrettyTypeEngine.AppendType(builder, propertyInfo.DeclaringType, typeOptions, tfc);
+			builder.Append('.');
+		}
 
 		bool isIndexer = propertyInfo.GetIndexParameters().Length > 0;
 		if (isIndexer)
@@ -38,7 +56,7 @@ static partial class PrettyMemberEngine
 			for (int i = 0; i < indexParameters.Length; i++)
 			{
 				if (i > 0) builder.Append(", ");
-				builder.Append(Format(indexParameters[i], options, accessor));
+				builder.Append(Format(indexParameters[i], options, accessor, tfc));
 			}
 			builder.Append(']');
 		}
@@ -47,16 +65,15 @@ static partial class PrettyMemberEngine
 			builder.Append(propertyInfo.Name);
 		}
 
-		string typeText = PrettyTypeEngine.Format(propertyInfo.PropertyType, new PrettyTypeOptions { UseNamespace = options.UseNamespaceForTypes });
+		string typeText = PrettyTypeEngine.Format(propertyInfo.PropertyType, typeOptions, tfc);
 
+		builder.Append(" : ").Append(typeText);
 		if (options.ShowNullabilityAnnotations &&
 		    IsNullableReference(propertyInfo, propertyInfo.PropertyType) &&
 		    !typeText.EndsWith("?", StringComparison.Ordinal))
 		{
-			typeText += "?";
+			builder.Append('?');
 		}
-
-		builder.Append(" : ").Append(typeText);
 
 		bool hasGet = getMethod != null;
 		bool hasSet = setMethod != null;
@@ -71,13 +88,11 @@ static partial class PrettyMemberEngine
 		string AccessorDecl(string kind, MethodInfo? m)
 		{
 			if (m == null) return "";
-			bool isInit = kind == "set" && IsInitOnly(propertyInfo);
 			string accVis = GetAccessibility(m);
 			string outerVis = accessor != null ? GetAccessibility(accessor) : accVis;
-			string kw = isInit ? "init" : "set";
 			return accVis == outerVis
-				       ? $"{(kind == "get" ? "get" : kw)};"
-				       : $"{accVis} {(kind == "get" ? "get" : kw)};";
+				       ? $"{kind};"
+				       : $"{accVis} {kind};";
 		}
 	}
 
@@ -108,17 +123,43 @@ static partial class PrettyMemberEngine
 	/// </remarks>
 	private static bool IsInitOnly(PropertyInfo propertyInfo)
 	{
-		MethodInfo? set = propertyInfo.SetMethod;
-		if (set == null) return false;
-		// C# 'init' is encoded as a required modifier on the return parameter.
-		// ReSharper disable once PossibleNullReferenceException
-		Type[] mods = set.ReturnParameter.GetRequiredCustomModifiers();
-		for (int i = 0; i < mods.Length; i++)
-		{
-			if (mods[i].FullName == "System.Runtime.CompilerServices.IsExternalInit")
-				return true;
-		}
-		return false;
+		MethodInfo? setMethodInfo = propertyInfo.SetMethod;
+		if (setMethodInfo == null) return false;
+
+		// Get the cached result (atomically)
+		// The cache key is the MethodInfo of the setter
+		object result = sInitOnlyCache.GetValue(
+			setMethodInfo,
+			static methodInfo =>
+			{
+				// Use GetCustomAttributesData() on the return parameter for performance.
+				// This avoids allocating the attributes themselves.
+				try
+				{
+					// ReSharper disable once PossibleNullReferenceException
+					IList<CustomAttributeData> attributes = methodInfo.ReturnParameter.GetCustomAttributesData();
+
+					// ReSharper disable once ForCanBeConvertedToForeach
+					for (int i = 0; i < attributes.Count; i++)
+					{
+						Type attrType = attributes[i].AttributeType;
+						if (string.Equals(attrType.Name, "IsExternalInit", StringComparison.Ordinal) &&
+						    string.Equals(attrType.Namespace, "System.Runtime.CompilerServices", StringComparison.Ordinal))
+						{
+							return sTrueBox;
+						}
+					}
+				}
+				catch
+				{
+					// Defensive: In case GetCustomAttributesData fails
+				}
+
+				return sFalseBox;
+			});
+
+		// Return the unboxed bool
+		return ReferenceEquals(result, sTrueBox);
 	}
 #pragma warning restore CS1574 // XML comment has cref attribute that could not be resolved
 }

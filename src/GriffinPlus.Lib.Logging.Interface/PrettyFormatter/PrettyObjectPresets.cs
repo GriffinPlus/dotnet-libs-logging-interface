@@ -21,13 +21,13 @@ public static class PrettyObjectPresets
 	{
 		MaxDepth = 1,
 		MaxCollectionItems = 3,
-		MaxStringLength = 120,
 		IncludeFields = false,
 		IncludeProperties = true,
 		IncludeNonPublic = false,
 		SortMembers = true,
 		ShowTypeHeader = true,
-		UseNamespaceForTypes = false
+		UseNamespaceForTypes = false,
+		DictionaryFormat = DictionaryFormat.KeyEqualsValue
 	}.Freeze();
 
 	/// <summary>
@@ -37,13 +37,13 @@ public static class PrettyObjectPresets
 	{
 		MaxDepth = 2,
 		MaxCollectionItems = 5,
-		MaxStringLength = 200,
 		IncludeFields = true,
 		IncludeProperties = true,
 		IncludeNonPublic = false,
 		SortMembers = true,
 		ShowTypeHeader = true,
-		UseNamespaceForTypes = true
+		UseNamespaceForTypes = true,
+		DictionaryFormat = DictionaryFormat.KeyEqualsValue
 	}.Freeze();
 
 	/// <summary>
@@ -53,13 +53,13 @@ public static class PrettyObjectPresets
 	public static readonly PrettyObjectOptions Verbose = new PrettyObjectOptions
 	{
 		MaxDepth = 4,
-		MaxCollectionItems = -1,
-		MaxStringLength = -1,
+		MaxCollectionItems = PrettyObjectOptions.Unlimited,
 		IncludeFields = true,
 		IncludeProperties = true,
 		IncludeNonPublic = true,
 		SortMembers = true,
 		ShowTypeHeader = true,
-		UseNamespaceForTypes = true
+		UseNamespaceForTypes = true,
+		DictionaryFormat = DictionaryFormat.KeyEqualsValue
 	}.Freeze();
 }

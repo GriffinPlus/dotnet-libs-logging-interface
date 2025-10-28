@@ -11,6 +11,16 @@ namespace GriffinPlus.Lib.Logging;
 static partial class PrettyMemberEngine
 {
 	/// <summary>
+	/// A thread-safe cache that associates <see cref="ParameterInfo"/> objects with their corresponding values.
+	/// </summary>
+	/// <remarks>
+	/// This cache is used to store metadata or computed values related to <see cref="ParameterInfo"/>
+	/// instances. The use of <see cref="ConditionalWeakTable{TKey,TValue}"/> ensures that the entries are automatically
+	/// removed when the associated <see cref="ParameterInfo"/> objects are no longer referenced.
+	/// </remarks>
+	private static readonly ConditionalWeakTable<ParameterInfo, object> sInModifierCache = new();
+
+	/// <summary>
 	/// Appends a formatted parameter list to the specified <see cref="StringBuilder"/>.
 	/// </summary>
 	/// <param name="builder">The target <see cref="StringBuilder"/>.</param>
@@ -18,8 +28,9 @@ static partial class PrettyMemberEngine
 	/// <param name="options">Formatting options controlling nullability and layout.</param>
 	/// <param name="owner">
 	/// Optional method or constructor that owns the parameters.
-	/// Used by <see cref="Format(ParameterInfo, PrettyMemberOptions, MethodBase?)"/> to resolve contextual attributes.
+	/// Used by <see cref="Format(ParameterInfo, PrettyMemberOptions, MethodBase?, TextFormatContext)"/> to resolve contextual attributes.
 	/// </param>
+	/// <param name="tfc">A <see cref="TextFormatContext"/> providing newline, indentation, and culture information.</param>
 	/// <remarks>
 	/// This helper avoids <see cref="string.Join(string, IEnumerable{string})"/> and LINQ enumerations to minimize allocations.
 	/// It preserves the exact output semantics of previous implementations while being slightly faster for methods with many parameters.
@@ -28,7 +39,8 @@ static partial class PrettyMemberEngine
 		StringBuilder       builder,
 		ParameterInfo[]     parameters,
 		PrettyMemberOptions options,
-		MethodBase?         owner = null)
+		MethodBase?         owner,
+		TextFormatContext   tfc)
 	{
 		if (parameters.Length == 0)
 		{
@@ -44,7 +56,7 @@ static partial class PrettyMemberEngine
 		{
 			if (i > 0) builder.Append(", ");
 			if (isExtension && i == 0) builder.Append("this ");
-			builder.Append(Format(parameters[i], options, owner));
+			builder.Append(Format(parameters[i], options, owner, tfc));
 		}
 		builder.Append(')');
 	}
@@ -82,12 +94,22 @@ static partial class PrettyMemberEngine
 	/// <returns><see langword="true"/> if the parameter has the readonly-ref modifier; otherwise <see langword="false"/>.</returns>
 	private static bool HasInModifier(ParameterInfo parameterInfo)
 	{
-		foreach (object attribute in parameterInfo.GetCustomAttributes(true))
-		{
-			Type type = attribute.GetType();
-			if (type.FullName == "System.Runtime.CompilerServices.IsReadOnlyAttribute")
-				return true;
-		}
-		return false;
+		object result = sInModifierCache.GetValue(
+			parameterInfo,
+			static pi =>
+			{
+				// use CustomAttributeData for performance
+				foreach (CustomAttributeData cad in pi.GetCustomAttributesData())
+				{
+					Type type = cad.AttributeType;
+					if (string.Equals(type.Name, "IsReadOnlyAttribute", StringComparison.Ordinal) &&
+					    string.Equals(type.Namespace, "System.Runtime.CompilerServices", StringComparison.Ordinal))
+					{
+						return sTrueBox;
+					}
+				}
+				return sFalseBox;
+			});
+		return ReferenceEquals(result, sTrueBox);
 	}
 }

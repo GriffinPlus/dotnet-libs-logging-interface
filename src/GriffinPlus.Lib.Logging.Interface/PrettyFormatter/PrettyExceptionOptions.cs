@@ -11,24 +11,26 @@ namespace GriffinPlus.Lib.Logging;
 /// Options that control how <see cref="Exception"/> instances are formatted by <see cref="PrettyExceptionEngine"/>.
 /// </summary>
 /// <remarks>
-/// The options are mutable for convenience. Use <see cref="Clone"/> to safely customize presets per call.
+/// The options are mutable for convenience. Use <see cref="PrettyOptionsBase{PrettyExceptionOptions}.Clone"/>
+/// to safely customize presets per call.
 /// </remarks>
-public sealed class PrettyExceptionOptions
+public sealed class PrettyExceptionOptions : PrettyOptionsBase<PrettyExceptionOptions>
 {
 	#region Properties
 
-	private bool mIncludeType            = true;
-	private bool mUseNamespaceForTypes   = true;
-	private bool mIncludeHResult         = false;
-	private bool mIncludeSource          = false;
-	private bool mIncludeHelpLink        = false;
-	private bool mIncludeTargetSite      = true;
-	private bool mIncludeStackTrace      = true;
-	private int  mStackFrameLimit        = 50;
-	private bool mIncludeData            = true;
-	private int  mDataMaxItems           = 10;
-	private bool mFlattenAggregates      = true;
-	private int  mMaxInnerExceptionDepth = 4;
+	private bool             mIncludeType            = true;
+	private bool             mUseNamespaceForTypes   = true;
+	private bool             mIncludeHResult         = false;
+	private bool             mIncludeSource          = false;
+	private bool             mIncludeHelpLink        = false;
+	private bool             mIncludeTargetSite      = true;
+	private bool             mIncludeStackTrace      = true;
+	private int              mStackFrameLimit        = 50;
+	private bool             mIncludeData            = true;
+	private int              mDataMaxItems           = 10;
+	private bool             mFlattenAggregates      = true;
+	private int              mMaxInnerExceptionDepth = 4;
+	private DictionaryFormat mDataDictionaryFormat   = DictionaryFormat.KeyEqualsValue;
 
 	/// <summary>
 	/// Gets or sets whether the exception type name is included before the message.<br/>
@@ -130,7 +132,7 @@ public sealed class PrettyExceptionOptions
 
 	/// <summary>
 	/// Gets or sets a maximum number of stack frames to print per exception.<br/>
-	/// A value &lt;= 0 disables the limit.
+	/// A value of <c>0</c> shows no frames. A negative value disables the limit.<br/>
 	/// Default is <c>50</c>.
 	/// </summary>
 	public int StackFrameLimit
@@ -139,7 +141,7 @@ public sealed class PrettyExceptionOptions
 		set
 		{
 			EnsureMutable();
-			mStackFrameLimit = value < 0 ? 0 : value; // 0 = unlimited
+			mStackFrameLimit = value;
 		}
 	}
 
@@ -159,7 +161,7 @@ public sealed class PrettyExceptionOptions
 
 	/// <summary>
 	/// Gets or sets the maximum number of <see cref="Exception.Data"/> entries printed.<br/>
-	/// A value &lt;= 0 disables the limit.<br/>
+	/// A value of <c>0</c> shows no items. A negative value disables the limit.<br/>
 	/// Default is <c>10</c>.
 	/// </summary>
 	public int DataMaxItems
@@ -201,55 +203,18 @@ public sealed class PrettyExceptionOptions
 		}
 	}
 
-	#endregion
-
-	#region Freeze Support
-
 	/// <summary>
-	/// Gets or sets a value indicating whether this options instance is frozen (read-only).
+	/// Gets a value controlling how entries in <see cref="Exception.Data"/> are rendered.<br/>
+	/// Default is <see cref="DictionaryFormat.KeyEqualsValue"/>.
 	/// </summary>
-	public bool IsFrozen { get; private set; }
-
-	/// <summary>
-	/// Makes this options instance read-only. Subsequent attempts to mutate it will throw.
-	/// </summary>
-	/// <returns>
-	/// The frozen <see cref="PrettyExceptionOptions"/> instance.
-	/// </returns>
-	public PrettyExceptionOptions Freeze()
+	public DictionaryFormat DataDictionaryFormat
 	{
-		IsFrozen = true;
-		return this;
-	}
-
-	/// <summary>
-	/// Ensures that the current instance is mutable and can be modified.
-	/// </summary>
-	/// <remarks>
-	/// If the instance is frozen, an <see cref="InvalidOperationException"/> is thrown.
-	/// To modify a frozen instance, use the <see cref="Clone"/> method to create a mutable copy.
-	/// </remarks>
-	/// <exception cref="InvalidOperationException">Thrown if the instance is frozen and cannot be modified.</exception>
-	private void EnsureMutable()
-	{
-		if (IsFrozen) throw new InvalidOperationException("Options instance is frozen. Clone() to modify.");
-	}
-
-	#endregion
-
-	#region Cloning
-
-	/// <summary>
-	/// Creates a deep unfrozen copy of this options instance.
-	/// </summary>
-	/// <returns>
-	/// A new <see cref="PrettyExceptionOptions"/> instance with identical property values.
-	/// </returns>
-	public PrettyExceptionOptions Clone()
-	{
-		var clone = (PrettyExceptionOptions)MemberwiseClone();
-		clone.IsFrozen = false;
-		return clone;
+		get => mDataDictionaryFormat;
+		set
+		{
+			EnsureMutable();
+			mDataDictionaryFormat = value;
+		}
 	}
 
 	#endregion

@@ -9,6 +9,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 // ReSharper restore RedundantUsingDirective
 
@@ -111,8 +112,37 @@ public static class NullabilityInspector
 	/// Cached, thread-safe context (single instance for the whole process)
 	/// </summary>
 	private static readonly NullabilityInfoContext sContext = new();
+
 #else
-	private static readonly ConcurrentDictionary<ICustomAttributeProvider, Nullability> sNullabilityCache = new();
+	/// <summary>
+	/// Holds a cached <see cref="Nullability"/> result for a specific reflection provider.
+	/// Stored as the value of <see cref="ConditionalWeakTable{TKey,TValue}"/> to avoid boxing and
+	/// to keep memory aligned with the lifetime of the provider (e.g., collectible ALC).
+	/// </summary>
+	private sealed class NullabilityHolder
+	{
+		/// <summary>
+		/// Gets the computed <see cref="Nullability"/> for the associated cache key.
+		/// </summary>
+		internal Nullability Value { get; }
+
+		/// <summary>
+		/// Initializes a new instance of the <see cref="NullabilityHolder"/> class.
+		/// </summary>
+		/// <param name="value">The nullability that was computed for the cache key.</param>
+		internal NullabilityHolder(Nullability value)
+		{
+			Value = value;
+		}
+	}
+
+	/// <summary>
+	/// Caches computed nullability per most-specific <see cref="ICustomAttributeProvider"/> key
+	/// (i.e., <see cref="ParameterInfo"/> (including return parameter) or <see cref="MemberInfo"/>).
+	/// Uses <see cref="ConditionalWeakTable{TKey,TValue}"/> so entries are reclaimed with the key.
+	/// </summary>
+	private static readonly ConditionalWeakTable<ICustomAttributeProvider, NullabilityHolder> sNullabilityCache = new();
+
 #endif
 
 	/// <summary>
@@ -292,44 +322,93 @@ public static class NullabilityInspector
 #else
 		// 2) < .NET 6: defensive decoding of compiler attributes (no hard type references)
 
-		// Check the cache.
+		// Determine a stable cache key: prefer parameter (including return parameter), else member.
 		ICustomAttributeProvider cacheKey = (ICustomAttributeProvider?)parameter ??
 		                                    (ICustomAttributeProvider?)returnParameter ??
 		                                    member;
-		if (sNullabilityCache.TryGetValue(cacheKey, out Nullability cachedResult))
-			return cachedResult;
 
-		// Most-specific to least-specific lookup order:
-		byte? flag =
-			TryGetNullableFlag(returnParameter) ??
-			TryGetNullableFlag(parameter) ??
-			TryGetNullableFlag(member) ??
-			TryGetNullableContextFlag(member) ??
-			TryGetNullableContextFlag(member.DeclaringType) ??
-			TryGetNullableContextFlag(member.Module) ??
-			TryGetNullableContextFlag(member.Module.Assembly);
+		// Atomically compute and cache the result; factory is capture-free and uses only 'key'.
+		NullabilityHolder holder = sNullabilityCache.GetValue(cacheKey, static key => new NullabilityHolder(ComputeNullability(key)));
 
-		Nullability result;
-		if (!flag.HasValue)
-		{
-			result = Nullability.Unknown;
-		}
-		else
-		{
-			// Roslyn encoding: 1 = NonNullable, 2 = Nullable, 0 = Oblivious
-			switch (flag.Value)
-			{
-				case 1:  result = Nullability.NonNullable; break;
-				case 2:  result = Nullability.Nullable; break;
-				case 0:  result = Nullability.Oblivious; break;
-				default: result = Nullability.Unknown; break;
-			}
-		}
-
-		sNullabilityCache.TryAdd(cacheKey, result);
-		return result;
+		// Return the cached value.
+		return holder.Value;
 #endif
 	}
+
+#if !NET6_0_OR_GREATER
+	/// <summary>
+	/// Computes the effective <see cref="Nullability"/> for the given reflection key using the
+	/// legacy (pre-.NET 6) attribute model (<c>NullableAttribute</c>, <c>NullableContextAttribute</c>).
+	/// The key is either a <see cref="ParameterInfo"/> (including the return parameter) or a <see cref="MemberInfo"/>.
+	/// </summary>
+	/// <param name="key">
+	/// The most-specific provider to start from. For parameters, use the <see cref="ParameterInfo"/> (including return parameter).
+	/// Otherwise, use the corresponding <see cref="MemberInfo"/>.
+	/// </param>
+	/// <returns>The computed <see cref="Nullability"/>.</returns>
+	private static Nullability ComputeNullability(ICustomAttributeProvider key)
+	{
+		try
+		{
+			// If the key is a ParameterInfo (includes return parameter via MethodBase.ReturnParameter),
+			// preference order: parameter → member → declaring type → module → assembly.
+			if (key is ParameterInfo parameterInfo)
+			{
+				MemberInfo memberInfo1 = parameterInfo.Member;
+				byte? flag =
+					TryGetNullableFlag(parameterInfo) ??
+					TryGetNullableFlag(memberInfo1) ??
+					TryGetNullableContextFlag(memberInfo1) ??
+					TryGetNullableContextFlag(memberInfo1.DeclaringType) ??
+					TryGetNullableContextFlag(memberInfo1.Module) ??
+					TryGetNullableContextFlag(memberInfo1.Module.Assembly);
+
+				return MapNullableFlag(flag);
+			}
+
+			// Otherwise, the key should be a MemberInfo:
+			if (key is MemberInfo memberInfo2)
+			{
+				byte? flag =
+					TryGetNullableFlag(memberInfo2) ??
+					TryGetNullableContextFlag(memberInfo2) ??
+					TryGetNullableContextFlag(memberInfo2.DeclaringType) ??
+					TryGetNullableContextFlag(memberInfo2.Module) ??
+					TryGetNullableContextFlag(memberInfo2.Module.Assembly);
+
+				return MapNullableFlag(flag);
+			}
+
+			// Fallback (should not happen with our chosen keys).
+			return Nullability.Unknown;
+		}
+		catch
+		{
+			// Defensive: inconsistent metadata or reflection issues → treat as unknown.
+			return Nullability.Unknown;
+		}
+	}
+
+	/// <summary>
+	/// Maps the compiler-emitted nullable flag to <see cref="Nullability"/>.
+	/// </summary>
+	/// <param name="flag">
+	/// 1 = non-nullable, 2 = nullable, 0 = oblivious, otherwise unknown.
+	/// </param>
+	/// <returns>The mapped <see cref="Nullability"/> value.</returns>
+	private static Nullability MapNullableFlag(byte? flag)
+	{
+		if (!flag.HasValue) return Nullability.Unknown;
+
+		return flag.Value switch
+		{
+			1     => Nullability.NonNullable,
+			2     => Nullability.Nullable,
+			0     => Nullability.Oblivious,
+			var _ => Nullability.Unknown
+		};
+	}
+#endif
 
 #if !NET6_0_OR_GREATER
 	/// <summary>
@@ -354,7 +433,8 @@ public static class NullabilityInspector
 
 		foreach (CustomAttributeData? cad in GetCustomAttributes(provider))
 		{
-			if (cad.AttributeType.FullName == "System.Runtime.CompilerServices.NullableAttribute")
+			if (string.Equals(cad.AttributeType.Name, "NullableAttribute", StringComparison.Ordinal) &&
+			    string.Equals(cad.AttributeType.Namespace, "System.Runtime.CompilerServices", StringComparison.Ordinal))
 			{
 				if (cad.ConstructorArguments.Count > 0)
 				{
@@ -368,6 +448,10 @@ public static class NullabilityInspector
 					if (arg.Value is IList<CustomAttributeTypedArgument> { Count: > 0 } array &&
 					    array[0].ArgumentType == typeof(byte))
 					{
+						// NOTE: This is a simplification. We only read the first
+						// element of the array. This is correct for simple types (e.g., string?)
+						// but will fail for complex, nested generics (e.g., Dictionary<string, string?>?),
+						// where the array describes a recursive tree.
 						return (byte)array[0].Value;
 					}
 				}
@@ -393,7 +477,8 @@ public static class NullabilityInspector
 
 		foreach (CustomAttributeData? cad in GetCustomAttributes(provider))
 		{
-			if (cad.AttributeType.FullName == "System.Runtime.CompilerServices.NullableContextAttribute")
+			if (string.Equals(cad.AttributeType.Name, "NullableContextAttribute", StringComparison.Ordinal) &&
+			    string.Equals(cad.AttributeType.Namespace, "System.Runtime.CompilerServices", StringComparison.Ordinal))
 			{
 				if (cad.ConstructorArguments.Count > 0)
 				{

@@ -3,8 +3,6 @@
 // The source code is licensed under the MIT license.
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-using System;
-
 namespace GriffinPlus.Lib.Logging;
 
 /// <summary>
@@ -17,11 +15,11 @@ namespace GriffinPlus.Lib.Logging;
 ///     version, culture, and public key token. Other sections can be enabled for more detailed inspection.
 ///     </para>
 ///     <para>
-///     The class is mutable for convenience and implements <see cref="Clone"/> to allow safe duplication
-///     and modification without affecting other formatter instances.
+///     The class is mutable for convenience and implements <see cref="PrettyOptionsBase{PrettyAssemblyOptions}.Clone"/>
+///     to allow safe duplication and modification without affecting other formatter instances.
 ///     </para>
 /// </remarks>
-public sealed class PrettyAssemblyOptions
+public sealed class PrettyAssemblyOptions : PrettyOptionsBase<PrettyAssemblyOptions>
 {
 	#region Properties
 
@@ -121,7 +119,7 @@ public sealed class PrettyAssemblyOptions
 
 	/// <summary>
 	/// Gets or sets the maximum number of exported types to include in the output.<br/>
-	/// A value of <c>0</c> or negative disables the limit (includes all types).<br/>
+	/// A value of <c>0</c> shows no types. A negative value disables the limit.<br/>
 	/// Default is <c>20</c>.
 	/// </summary>
 	public int ExportedTypesMax
@@ -146,57 +144,6 @@ public sealed class PrettyAssemblyOptions
 			EnsureMutable();
 			mUseNamespaceForTypes = value;
 		}
-	}
-
-	#endregion
-
-	#region Freeze Support
-
-	/// <summary>
-	/// Gets or sets a value indicating whether this options instance is frozen (read-only).
-	/// </summary>
-	public bool IsFrozen { get; private set; }
-
-	/// <summary>
-	/// Makes this options instance read-only. Subsequent attempts to mutate it will throw.
-	/// </summary>
-	/// <returns>
-	/// The frozen <see cref="PrettyAssemblyOptions"/> instance.
-	/// </returns>
-	public PrettyAssemblyOptions Freeze()
-	{
-		IsFrozen = true;
-		return this;
-	}
-
-	/// <summary>
-	/// Ensures that the current instance is mutable and can be modified.
-	/// </summary>
-	/// <remarks>
-	/// If the instance is frozen, an <see cref="InvalidOperationException"/> is thrown.
-	/// To modify a frozen instance, use the <see cref="Clone"/> method to create a mutable copy.
-	/// </remarks>
-	/// <exception cref="InvalidOperationException">Thrown if the instance is frozen and cannot be modified.</exception>
-	private void EnsureMutable()
-	{
-		if (IsFrozen) throw new InvalidOperationException("Options instance is frozen. Clone() to modify.");
-	}
-
-	#endregion
-
-	#region Cloning
-
-	/// <summary>
-	/// Creates a deep unfrozen copy of the current object.
-	/// </summary>
-	/// <returns>
-	/// A new <see cref="PrettyAssemblyOptions"/> instance with identical property values.
-	/// </returns>
-	public PrettyAssemblyOptions Clone()
-	{
-		var clone = (PrettyAssemblyOptions)MemberwiseClone();
-		clone.IsFrozen = false;
-		return clone;
 	}
 
 	#endregion

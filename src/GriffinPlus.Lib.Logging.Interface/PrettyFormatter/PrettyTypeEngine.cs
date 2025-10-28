@@ -30,39 +30,78 @@ static class PrettyTypeEngine
 	/// Type formatting options. Must not be <see langword="null"/> (callers pass a preset if needed).<br/>
 	/// Only <see cref="PrettyTypeOptions.UseNamespace"/> is currently consumed.
 	/// </param>
+	/// <param name="tfc">A <see cref="TextFormatContext"/> providing culture information.</param>
 	/// <returns>
 	/// A readable type name (optionally namespace-qualified) including array ranks, generic arguments,
 	/// tuple syntax, nullable suffix for value types, and nested type chains where applicable.
 	/// </returns>
 	/// <remarks>
-	/// <b>ByRef types:</b> When <paramref name="type"/> is a ByRef type (for example <c>System.String&</c>),
-	/// the type formatter emits the CLR-style suffix <c>&</c> (e.g., <c>string&</c>).
+	/// <b>ByRef types:</b> When <paramref name="type"/> is a ByRef type (for example <c>System.String&amp;</c>),
+	/// the type formatter emits the CLR-style suffix <c>&amp;</c> (e.g., <c>string&amp;</c>).
 	/// C#-specific parameter modifiers (<c>ref</c>, <c>out</c>, <c>in</c>) are added later
 	/// by the member formatter (<see cref="PrettyMemberEngine"/>).
 	/// </remarks>
-	public static string Format(Type? type, PrettyTypeOptions options)
+	/// <exception cref="ArgumentNullException">
+	/// Thrown if <paramref name="type"/> or <paramref name="options"/> is <see langword="null"/>.
+	/// </exception>
+	public static string Format(Type type, PrettyTypeOptions options, TextFormatContext tfc)
 	{
-		if (type == null) return "<null>";
+		if (type == null) throw new ArgumentNullException(nameof(type));
+		if (options == null) throw new ArgumentNullException(nameof(options));
+
+		// Use a StringBuilder to minimize allocations (most type names fit into 64 characters)
+		// DO NOT cache the formatted type name as this can lead to memory leaks in long-running processes!
 		var builder = new StringBuilder(64);
-		AppendType(builder, type, options);
+		AppendType(builder, type, options, tfc);
 		return builder.ToString();
 	}
 
 	/// <summary>
-	/// Internal recursive workhorse for Format(). Appends the formatted type to the builder.
+	/// Appends a string representation of the specified <see cref="Type"/> to the provided <see cref="StringBuilder"/>.
 	/// </summary>
-	/// <param name="builder">The string builder to append the formatted type to.</param>
-	/// <param name="type">
-	/// The runtime type to render. If <see langword="null"/>, the literal string <c>"&lt;null&gt;"</c> is returned.
+	/// <param name="builder">
+	/// The <see cref="StringBuilder"/> to which the type representation will be appended. Cannot be <see langword="null"/>.
 	/// </param>
-	/// <param name="options">Type formatting options.</param>
-	internal static void AppendType(StringBuilder builder, Type? type, PrettyTypeOptions options)
+	/// <param name="type">
+	/// The <see cref="Type"/> to represent.<br/>
+	/// If <see langword="null"/>, the string <c>"&lt;null&gt;"</c> will be appended.
+	/// </param>
+	/// <param name="options">
+	/// Options that control how the type is formatted, such as whether to include namespaces.
+	/// </param>
+	/// <param name="tfc">A <see cref="TextFormatContext"/> providing culture information.</param>
+	/// <remarks>
+	/// The method generates a human-readable representation of the type, including support for C# keyword
+	/// aliases, nullable types, arrays, tuples, anonymous types, generic types, and nested types. Special characters such
+	/// as <c>'?'</c>, <c>'[]'</c>, <c>'&amp;'</c>, and <c>'*'</c> are used to denote nullable types, arrays, by-reference
+	/// types, and pointer types, respectively.
+	/// </remarks>
+	public static void AppendType(
+		StringBuilder     builder,
+		Type?             type,
+		PrettyTypeOptions options,
+		TextFormatContext tfc)
 	{
-		// Null
+		// Null reference
 		if (type == null)
 		{
 			builder.Append("<null>");
 			return;
+		}
+
+		// Native Int Aliases (optional)
+		if (options.UseNativeIntegerAliases)
+		{
+			if (type == typeof(IntPtr))
+			{
+				builder.Append("nint");
+				return;
+			}
+			if (type == typeof(UIntPtr))
+			{
+				builder.Append("nuint");
+				return;
+			}
 		}
 
 		// C# keyword aliases
@@ -75,13 +114,13 @@ static class PrettyTypeEngine
 		// ByRef / Pointer
 		if (type.IsByRef)
 		{
-			AppendType(builder, type.GetElementType()!, options);
+			AppendType(builder, type.GetElementType()!, options, tfc);
 			builder.Append('&');
 			return;
 		}
 		if (type.IsPointer)
 		{
-			AppendType(builder, type.GetElementType()!, options);
+			AppendType(builder, type.GetElementType()!, options, tfc);
 			builder.Append('*');
 			return;
 		}
@@ -90,17 +129,20 @@ static class PrettyTypeEngine
 		if (type.IsArray)
 		{
 			Type? elem = type.GetElementType();
-			int rank = type.GetArrayRank();
-			string suffix = rank == 1 ? "[]" : "[" + new string(',', rank - 1) + "]";
-			AppendType(builder, elem!, options);
-			builder.Append(suffix);
+			AppendType(builder, elem!, options, tfc);
+			builder.Append('[');
+			if (type.GetArrayRank() > 1)
+			{
+				builder.Append(',', type.GetArrayRank() - 1);
+			}
+			builder.Append(']');
 			return;
 		}
 
 		// Nullable<T> => T?
 		if (IsNullableValue(type, out Type? underlying))
 		{
-			AppendType(builder, underlying!, options);
+			AppendType(builder, underlying!, options, tfc);
 			builder.Append('?');
 			return;
 		}
@@ -113,7 +155,7 @@ static class PrettyTypeEngine
 			foreach (Type tupleType in FlattenTupleArgs(type))
 			{
 				if (!first) builder.Append(", ");
-				AppendType(builder, tupleType, options); // Recurse
+				AppendType(builder, tupleType, options, tfc); // Recurse
 				first = false;
 			}
 			builder.Append(')');
@@ -144,7 +186,7 @@ static class PrettyTypeEngine
 		// Closed/open generics and nested types
 		if (type.IsGenericType)
 		{
-			AppendGenericType(builder, type, options);
+			AppendGenericType(builder, type, options, tfc);
 			return;
 		}
 
@@ -153,7 +195,7 @@ static class PrettyTypeEngine
 		// Non-generic nested type
 		if (type.DeclaringType != null)
 		{
-			AppendType(builder, type.DeclaringType, options); // Recurse
+			AppendType(builder, type.DeclaringType, options, tfc); // Recurse
 			builder.Append('.').Append(type.Name);
 			return;
 		}
@@ -294,14 +336,19 @@ static class PrettyTypeEngine
 	/// <param name="builder">The target <see cref="StringBuilder"/>.</param>
 	/// <param name="type">The generic type to format.</param>
 	/// <param name="options">Type formatting options.</param>
-	private static void AppendGenericType(StringBuilder builder, Type type, PrettyTypeOptions options)
+	/// <param name="tfc">A <see cref="TextFormatContext"/> providing culture information.</param>
+	private static void AppendGenericType(
+		StringBuilder     builder,
+		Type              type,
+		PrettyTypeOptions options,
+		TextFormatContext tfc)
 	{
 		bool useNamespace = options.UseNamespace;
 
 		// Prefix with declaring type chain (already formatted correctly for nested generics)
 		if (type.DeclaringType != null)
 		{
-			AppendType(builder, type.DeclaringType, options); // Recurse
+			AppendType(builder, type.DeclaringType, options, tfc); // Recurse
 			builder.Append('.');
 		}
 		else if (useNamespace && !string.IsNullOrEmpty(type.Namespace))
@@ -336,7 +383,7 @@ static class PrettyTypeEngine
 
 				// A generic argument can be a parameter (T) or a concrete type (int)
 				if (a.IsGenericParameter) builder.Append(a.Name);
-				else AppendType(builder, a, options); // Recurse
+				else AppendType(builder, a, options, tfc); // Recurse
 			}
 			builder.Append('>');
 		}
@@ -358,9 +405,33 @@ static class PrettyTypeEngine
 		// Use ReadOnlySpan<char> to avoid allocating a substring
 		return int.TryParse(name.AsSpan(i + 1), out int n) ? n : 0;
 #else
-		// Fallback for older targets
-		// ReSharper disable once ReplaceSubstringWithRangeIndexer
-		return int.TryParse(name.Substring(i + 1), out int n) ? n : 0;
+		// Fallback for older targets: manual parse to avoid Substring() allocation
+		int arity = 0;
+		int index = i + 1;
+		while (index < name.Length)
+		{
+			char c = name[index];
+			if (c is >= '0' and <= '9')
+			{
+				// (arity * 10) + (digit value)
+				// Use checked() block to be safe against overflow, though arity > 99 is unlikely.
+				try
+				{
+					arity = checked(arity * 10 + (c - '0'));
+				}
+				catch (OverflowException)
+				{
+					return 0; // Malformed arity, treat as 0
+				}
+			}
+			else
+			{
+				// Stop at first non-digit
+				break;
+			}
+			index++;
+		}
+		return arity;
 #endif
 	}
 
