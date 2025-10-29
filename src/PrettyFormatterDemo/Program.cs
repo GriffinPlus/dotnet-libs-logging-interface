@@ -134,7 +134,10 @@ public static class Program
 
 			foreach ((string Name, object? Obj) item in objectsToFormat)
 			{
-				Console.WriteLine($"--- Formatting: {GetObjectDescription(item.Obj)} ({item.Obj?.GetType()}) ---");
+				Console.WriteLine($"--- Formatting:  {item.Name}");
+				Console.WriteLine($"--- Description: {GetObjectDescription(item.Obj)}");
+				Console.WriteLine($"--- Type:        {item.Obj?.GetType().FullName ?? "<not available>"}");
+				Console.WriteLine("--- Output ↓↓↓");
 				string formattedOutput;
 				try
 				{
