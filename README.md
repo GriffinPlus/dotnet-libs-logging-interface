@@ -172,7 +172,26 @@ The `GetHighPrecisionTimestamp()` method of the `LogWriter` class returns a time
 
 #### PrettyFormatter
 
-The `PrettyFormatter` class provides methods to format runtime metadata such as types, methods, events, properties, fields, assemblies, modules, exceptions and objects in a human-readable way. The `LogWriter` class makes use of the `PrettyFormatter` internally when formatting log messages containing such metadata.
+The `PrettyFormatter` class provides methods to format runtime metadata such as types, methods, events, properties, fields, assemblies, modules, exceptions and objects in a human-readable way. The `LogWriter` class makes use of the `PrettyFormatter` internally when formatting log messages containing such metadata. The following runtime metadata can be formatted using the `PrettyFormatter`:
+
+- Types and Structures:
+  - `System.Type` (Formats class names, generic, arrays, pointers and nullable value types)
+- Assembly and Module Metadata:
+  - `System.Reflection.Assembly` (Formats assembly identity, runtime version, modules, references, and exported types)
+  - `System.Reflection.AssemblyName`` (Formats the canonical identity of an assembly)
+  - `System.Reflection.Module` (Formats the module name)
+- Member Metadata:
+  - `System.Reflection.MemberInfo` (Base class for all members)
+  - `System.Reflection.MethodInfo` (Formats method signatures, including async, generics, and constraints)
+  - `System.Reflection.ConstructorInfo` (Formats constructor signatures)
+  - `System.Reflection.PropertyInfo` (Formats property and indexer signatures, including accessors (get, set, init))
+  - `System.Reflection.FieldInfo` (Formats field signatures, including static, readonly, const)
+  - `System.Reflection.EventInfo` (Formats event signatures)
+  - `System.Reflection.ParameterInfo` (Formats parameters, including modifiers (ref, out, in, params) and nullable annotations (?))
+- Additional Types Handled  
+  The formatter also includes specialized engines for:
+  - `System.Exception` (Formats the entire hierarchy, including inner and aggregated exceptions, stack trace, and the Data dictionary)
+  - `System.Object` (The generic case, processing complex objects, collections, dictionaries, and primitive types while performing cycle detection)
 
 ### Complete Example
 
