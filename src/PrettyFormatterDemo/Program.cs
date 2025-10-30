@@ -184,17 +184,32 @@ public static class Program
 		try { throw simpleException; }
 		catch
 		{
-			/* swallow */
+			// populates the stacktrace
 		}
 
 		// Complex Exception
-		var complexException = new AggregateException(
-			"Multiple errors occurred",
-			new ArgumentNullException("param1"),
-			new FormatException("Invalid input format") { HelpLink = "http://example.com/errors/format" });
+		Exception innerException1 = new ArgumentNullException("param1");
+		Exception innerException2 = new FormatException("Invalid input format") { HelpLink = "http://example.com/errors/format" };
+		var complexException = new AggregateException("Multiple errors occurred", innerException1, innerException2);
 		complexException.Data.Add("ErrorCode", 1001);
 		complexException.Data.Add("Timestamp", DateTime.UtcNow);
 		complexException.Data.Add(new Address { Street = "Exception Ally", ZipCode = "12345", City = "Anytown" }, person); // Complex key/value in Data
+		try { throw innerException1; }
+		catch
+		{
+			// populates the stacktrace
+		}
+		try { throw innerException2; }
+		catch
+		{
+			// populates the stacktrace
+		}
+		try { throw complexException; }
+		catch
+		{
+			// populates the stacktrace
+		}
+
 
 		// List<object?>
 		var list = new List<object?> { 1, "two", null, 3.14, DateTime.Now };
@@ -236,8 +251,10 @@ public static class Program
 			("Guid", Guid.NewGuid()),
 			("Nullable Int", (int?)null),
 			("Nullable Int Val", (int?)123),
-			("Simple Array", new[] { 1, 2, 3, 4, 5, 6, 7 }),
-			("Byte Array", Encoding.UTF8.GetBytes("Test Bytes")),
+			("Simple Array (short)", new[] { 1, 2, 3, 4, 5, 6, 7 }),
+			("Simple Array (long)", new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40  }),
+			("Byte Array (short)", Encoding.UTF8.GetBytes("Test Bytes")),
+			("Byte Array (long)", Encoding.UTF8.GetBytes("This is a very long sequence of bytes")),
 			("2D Array", new[,] { { 1, 2 }, { 3, 4 } }),
 			("List<object?>", list),
 			("Dictionary", dict),
