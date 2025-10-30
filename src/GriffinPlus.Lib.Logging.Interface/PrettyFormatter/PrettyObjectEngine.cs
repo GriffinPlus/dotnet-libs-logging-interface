@@ -16,6 +16,7 @@ using System.Text;
 
 // ReSharper disable ForCanBeConvertedToForeach
 // ReSharper disable LoopCanBeConvertedToQuery
+// ReSharper disable PossibleMultipleEnumeration
 
 namespace GriffinPlus.Lib.Logging;
 
@@ -107,7 +108,7 @@ static class PrettyObjectEngine
 		// Prevent cycles for reference types other than string
 		if (value is not string && IsRefType(value) && !visited.Add(value))
 		{
-			builder.Append("…(cycle)");
+			builder.Append(tfc.TruncationMarker).Append("(cycle)");
 			return;
 		}
 
@@ -268,20 +269,36 @@ static class PrettyObjectEngine
 	}
 
 	/// <summary>
-	/// Appends a dictionary value like <c>{ key1 = value1, key2 = value2, … } (Count = N)</c>.
-	/// Limits output per <paramref name="options"/>.
+	/// Appends a formatted representation of a dictionary value to <paramref name="builder"/>.
+	/// Chooses between a compact single-line layout and a multi-line block depending on
+	/// <see cref="PrettyObjectOptions.AllowMultiline"/> and the rendered content.
 	/// </summary>
-	/// <param name="builder">Target <see cref="StringBuilder"/>.</param>
-	/// <param name="adapter">The dictionary adapter to access entries.</param>
-	/// <param name="instance">The dictionary instance.</param>
-	/// <param name="options">Formatting options (item limits, depth, type-name mode).</param>
-	/// <param name="depth">Current recursion depth.</param>
-	/// <param name="visited">Reference set used to detect and avoid cycles.</param>
-	/// <param name="typeOptions">Type-name rendering options for nested values.</param>
-	/// <param name="tfc">
-	/// An optional <see cref="TextFormatContext"/> providing newline, indentation, and culture information.<br/>
-	/// If <see langword="null"/>, the engine uses platform defaults.
-	/// </param>
+	/// <param name="builder">Target <see cref="StringBuilder"/> receiving the formatted text.</param>
+	/// <param name="adapter">Unified adapter providing enumeration and optional count for the dictionary-like instance.</param>
+	/// <param name="instance">The dictionary-like object to render.</param>
+	/// <param name="options">Object-formatting options controlling layout, limits and style.</param>
+	/// <param name="depth">Current indentation depth (used for multi-line layout).</param>
+	/// <param name="visited">Cycle detection set used by the engine (passed through to <see cref="AppendObject"/>).</param>
+	/// <param name="typeOptions">Type-formatting options (passed through to <see cref="AppendObject"/>).</param>
+	/// <param name="tfc">Text formatting context (indent token, newline string, culture).</param>
+	/// <remarks>
+	///     <para>
+	///     <b>Determinism:</b> When <see cref="PrettyObjectOptions.SortMembers"/> is <see langword="true"/>, items are
+	///     collected up to <see cref="PrettyObjectOptions.MaxCollectionItems"/> and sorted by their <em>rendered key</em>
+	///     using ordinal comparison to produce a stable order. When <see langword="false"/>, items are streamed in
+	///     enumeration order with O(1) additional memory.
+	///     </para>
+	///     <para>
+	///     <b>Multi-line layout:</b> Enabled if <see cref="PrettyObjectOptions.AllowMultiline"/> is <see langword="true"/>
+	///     and either (a) more than one entry is emitted or (b) any rendered key/value contains a line break
+	///     (LF/CR/VT/FF/NEL/LS/PS). The block is indented by one level relative to <paramref name="depth"/>.
+	///     </para>
+	///     <para>
+	///     <b>Count suffix:</b> A trailing <c>(Count = n)</c> is appended when the adapter can provide an exact count.
+	///     If the count is unknown and truncation occurred, the suffix falls back to <c>(Count ≥ m)</c>, where <c>m</c>
+	///     is the number of items emitted plus one.
+	///     </para>
+	/// </remarks>
 	private static void AppendDictionary(
 		StringBuilder       builder,
 		IDictionaryAdapter  adapter,
@@ -292,126 +309,332 @@ static class PrettyObjectEngine
 		PrettyTypeOptions   typeOptions,
 		TextFormatContext   tfc)
 	{
+		// Get known count (if any) and determine item limit
 		int? knownCount = adapter.TryGetCount(instance);
-		int max = options.MaxCollectionItems >= 0 ? options.MaxCollectionItems : int.MaxValue;
+		int limit = options.MaxCollectionItems >= 0 ? options.MaxCollectionItems : int.MaxValue;
+		bool tuples = options.DictionaryFormat == DictionaryFormat.Tuples;
 
-		builder.Append("{ ");
-		int i = 0;
-		bool hasMore = false;
-
-		// Enumerate key-value pairs, sorting by key string representation if requested
-		IEnumerable<(object? Key, object? Value)> items = adapter.Enumerate(instance);
-		if (options.SortMembers) items = items.OrderBy(kv => KeyToInvariantOrdinalString(kv.Key), StringComparer.Ordinal);
-		bool tuple = options.DictionaryFormat == DictionaryFormat.Tuples;
-		foreach ((object? key, object? value) in items)
+		// Nothing to emit? Show empty braces and the most accurate count we have.
+		if (limit == 0)
 		{
-			if (i > 0 && i < max) builder.Append(", ");
-			if (i >= max)
+			builder.Append("{ }");
+			if (knownCount.HasValue)
+				builder.Append(" (Count = ").Append(knownCount.Value.ToString(tfc.Culture)).Append(')');
+			else
+				builder.Append(" (Count ≥ 0)");
+			return;
+		}
+
+		// ───────────────────────────── Sorted (buffered) path ─────────────────────────────
+
+		// Deterministic output: collect up to 'limit' items, sort by rendered key string (ordinal).
+
+		if (options.SortMembers)
+		{
+			using IEnumerator<(object? Key, object? Value)> e = adapter.Enumerate(instance).GetEnumerator();
+
+			// 1) Collect up to 'limit' items; render the KEY once (visible form).
+			var items = new List<(string KeyRendered, object? Value)>(Math.Min(limit, 16));
+			bool hasMore = false;
+			int taken = 0;
+
+			while (e.MoveNext())
 			{
-				hasMore = true;
-				break;
+				if (taken >= limit)
+				{
+					hasMore = true;
+					break;
+				}
+
+				// Render key using the same recursion/path as output (quotes, escapes, culture, namespaces, …)
+				var keyBuilder = new StringBuilder(64);
+				AppendObject(keyBuilder, e.Current.Key, options, depth + 1, visited, typeOptions, tfc);
+				items.Add((keyBuilder.ToString(), e.Current.Value));
+				taken++;
 			}
 
-			if (tuple) builder.Append('(');
-			AppendObject(builder, key, options, depth + 1, visited, typeOptions, tfc);
-			builder.Append(tuple ? ", " : " = ");
-			AppendObject(builder, value, options, depth + 1, visited, typeOptions, tfc);
-			if (tuple) builder.Append(')');
+			// 2) Sort by the rendered KEY string (ordinal). This is stable wrt Options + Culture.
+			items.Sort(static (a, b) => string.Compare(a.KeyRendered, b.KeyRendered, StringComparison.Ordinal));
 
-			i++;
+			// 3) Render VALUES and decide multiline (line-breaks in key/value or multiple entries).
+			var rendered = new List<(string KR, string VR)>(items.Count);
+			bool anyMultiline = false;
+			for (int i = 0; i < items.Count; i++)
+			{
+				var valueBuilder = new StringBuilder(128);
+				AppendObject(valueBuilder, items[i].Value, options, depth + 1, visited, typeOptions, tfc);
+				string valueString = valueBuilder.ToString();
+
+				if (!anyMultiline && (ContainsLineBreak(items[i].KeyRendered) || ContainsLineBreak(valueString)))
+					anyMultiline = true;
+
+				rendered.Add((items[i].KeyRendered, valueString));
+			}
+
+			// Inline-first: if it fits, prefer single-line even if thresholds would push to block.
+			var inlineTokens = new List<string>(rendered.Count);
+			for (int i = 0; i < rendered.Count; i++)
+			{
+				inlineTokens.Add(
+					tuples
+						? "( " + rendered[i].KR + ", " + rendered[i].VR + " )"
+						: rendered[i].KR + " = " + rendered[i].VR);
+			}
+			int inlineOverhead = hasMore ? 2 + tfc.TruncationMarker.Length : 0;
+			bool fitsInline = !anyMultiline &&
+			                  !ExceedsInlineWidth(inlineTokens, options.MaxLineContentWidth, separatorLength: 2, overhead: inlineOverhead);
+
+			if (!options.AllowMultiline || fitsInline)
+			{
+				// Single-line
+				builder.Append("{ ");
+				for (int i = 0; i < rendered.Count; i++)
+				{
+					if (i > 0) builder.Append(", ");
+					if (tuples)
+						builder.Append("( ").Append(rendered[i].KR).Append(", ").Append(rendered[i].VR).Append(" )");
+					else
+						builder.Append(rendered[i].KR).Append(" = ").Append(rendered[i].VR);
+				}
+				if (hasMore)
+				{
+					if (rendered.Count > 0) builder.Append(", ");
+					builder.Append(tfc.TruncationMarker);
+				}
+				builder.Append(" }");
+
+				if (knownCount.HasValue)
+					builder.Append(" (Count = ").Append(knownCount.Value.ToString(tfc.Culture)).Append(')');
+				else if (hasMore)
+					builder.Append(" (Count ≥ ").Append((rendered.Count + 1).ToString(tfc.Culture)).Append(')');
+				else
+					builder.Append(" (Count = ").Append(rendered.Count.ToString(tfc.Culture)).Append(')');
+				return;
+			}
+
+			// Multi-line block (flow-wrapped when enabled)
+			builder.Append('{').Append(tfc.NewLine);
+
+			if (options.FlowItemsInMultiline)
+			{
+				// Build entry tokens "key = value" or "( key, value )"
+				var tokens = new List<string>(rendered.Count + (hasMore ? 1 : 0));
+				for (int i = 0; i < rendered.Count; i++)
+				{
+					tokens.Add(
+						tuples
+							? "( " + rendered[i].KR + ", " + rendered[i].VR + " )"
+							: rendered[i].KR + " = " + rendered[i].VR);
+				}
+				if (hasMore) tokens.Add(tfc.TruncationMarker);
+				AppendFlowWrappedSequence(
+					builder,
+					tokens,
+					depth + 1,
+					tfc,
+					options.MaxLineContentWidth,
+					hasMoreAfter: false);
+			}
+			else
+			{
+				for (int i = 0; i < rendered.Count; i++)
+				{
+					AppendRepeat(builder, tfc.Indent, depth + 1);
+					if (tuples)
+						builder.Append("( ").Append(rendered[i].KR).Append(", ").Append(rendered[i].VR).Append(" )");
+					else
+						builder.Append(rendered[i].KR).Append(" = ").Append(rendered[i].VR);
+					if (i < rendered.Count - 1 || hasMore) builder.Append(',');
+					builder.Append(tfc.NewLine);
+				}
+				if (hasMore)
+				{
+					AppendRepeat(builder, tfc.Indent, depth + 1);
+					builder.Append(tfc.TruncationMarker).Append(tfc.NewLine);
+				}
+			}
+
+			AppendRepeat(builder, tfc.Indent, depth);
+			builder.Append('}');
+
+			if (knownCount.HasValue)
+				builder.Append(" (Count = ").Append(knownCount.Value.ToString(tfc.Culture)).Append(')');
+			else if (hasMore)
+				builder.Append(" (Count ≥ ").Append((rendered.Count + 1).ToString(tfc.Culture)).Append(')');
+			else
+				builder.Append(" (Count = ").Append(rendered.Count.ToString(tfc.Culture)).Append(')');
+			return;
 		}
 
-		if (hasMore)
+
+		// ───────────────────────────── Streaming (unsorted) path ─────────────────────────────
+
+		// O(1) memory: render first pair to decide layout; then stream until limit.
+		using (IEnumerator<(object? Key, object? Value)> e2 = adapter.Enumerate(instance).GetEnumerator())
 		{
-			if (i > 0) builder.Append(", ");
-			builder.Append('…');
+			// Buffer up to 'limit' entries to decide layout and to support flow-wrapped multi-line.
+			var renderedPairs = new List<(string KR, string VR)>(Math.Min(limit, 16));
+			bool truncated = false;
+
+			while (renderedPairs.Count < limit && e2.MoveNext())
+			{
+				var ksb2 = new StringBuilder(64);
+				var vsb2 = new StringBuilder(128);
+				AppendObject(ksb2, e2.Current.Key, options, depth + 1, visited, typeOptions, tfc);
+				AppendObject(vsb2, e2.Current.Value, options, depth + 1, visited, typeOptions, tfc);
+				renderedPairs.Add((ksb2.ToString(), vsb2.ToString()));
+			}
+			if (e2.MoveNext()) truncated = true;
+
+			// If no entries were printed
+			if (renderedPairs.Count == 0)
+			{
+				builder.Append("{ }");
+				if (knownCount.HasValue)
+					builder.Append(" (Count = ").Append(knownCount.Value.ToString(tfc.Culture)).Append(')');
+				else
+					builder.Append(" (Count = 0)");
+				return;
+			}
+
+			bool anyMultiline2 = false;
+			for (int i2 = 0; i2 < renderedPairs.Count; i2++)
+			{
+				if (ContainsLineBreak(renderedPairs[i2].KR) || ContainsLineBreak(renderedPairs[i2].VR))
+				{
+					anyMultiline2 = true;
+					break;
+				}
+			}
+
+			// Build the exact inline tokens (visible text) to measure the real line width.
+			// This mirrors the sorted path and properly accounts for quotes/escapes/culture.
+			var inlineTokens2 = new List<string>(renderedPairs.Count);
+			for (int i2 = 0; i2 < renderedPairs.Count; i2++)
+			{
+				inlineTokens2.Add(
+					tuples
+						? "( " + renderedPairs[i2].KR + ", " + renderedPairs[i2].VR + " )"
+						: renderedPairs[i2].KR + " = " + renderedPairs[i2].VR);
+			}
+
+			// If we append an ellipsis inline, include the width of ", " + truncation marker
+			int inlineOverhead2 = truncated ? 2 + tfc.TruncationMarker.Length : 0;
+
+			// Inline-first decision: prefer single-line if width allows and no item contains line breaks.
+			bool fitsInline2 = !anyMultiline2 &&
+			                   !ExceedsInlineWidth(inlineTokens2, options.MaxLineContentWidth, separatorLength: 2, overhead: inlineOverhead2);
+
+			if (!options.AllowMultiline || fitsInline2)
+			{
+				builder.Append("{ ");
+				for (int i2 = 0; i2 < renderedPairs.Count; i2++)
+				{
+					if (i2 > 0) builder.Append(", ");
+					if (tuples)
+						builder.Append("( ").Append(renderedPairs[i2].KR).Append(", ").Append(renderedPairs[i2].VR).Append(" )");
+					else
+						builder.Append(renderedPairs[i2].KR).Append(" = ").Append(renderedPairs[i2].VR);
+				}
+				if (truncated)
+				{
+					if (renderedPairs.Count > 0) builder.Append(", ");
+					builder.Append(tfc.TruncationMarker);
+				}
+				builder.Append(" }");
+
+				if (knownCount.HasValue)
+					builder.Append(" (Count = ").Append(knownCount.Value.ToString(tfc.Culture)).Append(')');
+				else if (truncated)
+					builder.Append(" (Count ≥ ").Append((renderedPairs.Count + 1).ToString(tfc.Culture)).Append(')');
+				else
+					builder.Append(" (Count = ").Append(renderedPairs.Count.ToString(tfc.Culture)).Append(')');
+				return;
+			}
+
+			// Multi-line, flow-wrapped
+			builder.Append('{').Append(tfc.NewLine);
+			if (options.FlowItemsInMultiline)
+			{
+				var tokens2 = new List<string>(renderedPairs.Count + (truncated ? 1 : 0));
+				for (int i2 = 0; i2 < renderedPairs.Count; i2++)
+				{
+					tokens2.Add(
+						tuples
+							? "( " + renderedPairs[i2].KR + ", " + renderedPairs[i2].VR + " )"
+							: renderedPairs[i2].KR + " = " + renderedPairs[i2].VR);
+				}
+				if (truncated) tokens2.Add(tfc.TruncationMarker);
+				AppendFlowWrappedSequence(
+					builder,
+					tokens2,
+					depth + 1,
+					tfc,
+					options.MaxLineContentWidth,
+					hasMoreAfter: false);
+			}
+			else
+			{
+				for (int i2 = 0; i2 < renderedPairs.Count; i2++)
+				{
+					AppendRepeat(builder, tfc.Indent, depth + 1);
+					if (tuples)
+						builder.Append("( ").Append(renderedPairs[i2].KR).Append(", ").Append(renderedPairs[i2].VR).Append(" )");
+					else
+						builder.Append(renderedPairs[i2].KR).Append(" = ").Append(renderedPairs[i2].VR);
+					if (i2 < renderedPairs.Count - 1 || truncated) builder.Append(',');
+					builder.Append(tfc.NewLine);
+				}
+				if (truncated)
+				{
+					AppendRepeat(builder, tfc.Indent, depth + 1);
+					builder.Append(tfc.TruncationMarker).Append(tfc.NewLine);
+				}
+			}
+
+			AppendRepeat(builder, tfc.Indent, depth);
+			builder.Append('}');
+
+			if (knownCount.HasValue)
+				builder.Append(" (Count = ").Append(knownCount.Value.ToString(tfc.Culture)).Append(')');
+			else if (truncated)
+				builder.Append(" (Count ≥ ").Append((renderedPairs.Count + 1).ToString(tfc.Culture)).Append(')');
+			else
+				builder.Append(" (Count = ").Append(renderedPairs.Count.ToString(tfc.Culture)).Append(')');
 		}
-
-		builder.Append(" }");
-
-		// Append count information
-		if (knownCount.HasValue)
-			builder.Append(" (Count = ").Append(knownCount.Value.ToString(tfc.Culture)).Append(')');
-		else if (hasMore)
-			builder.Append(" (Count ≥ ").Append((i + 1).ToString(tfc.Culture)).Append(')');
-		else
-			builder.Append(" (Count = ").Append(i.ToString(tfc.Culture)).Append(')');
 	}
 
 	/// <summary>
-	/// Converts the specified key to its invariant string representation using ordinal formatting.
+	/// Appends an <see cref="Array"/> value using either a compact single-line layout
+	/// (e.g., <c>Int32[3] { 1, 2, 3 }</c>) or a multi-line, indented block when
+	/// <see cref="PrettyObjectOptions.AllowMultiline"/> is enabled and beneficial.
 	/// </summary>
-	/// <param name="key">The object to convert. Can be <see langword="null"/>.</param>
-	/// <returns>
-	/// A string representation of the key formatted using the invariant culture.
-	/// Returns an empty string if <paramref name="key"/> is <see langword="null"/> or if an error occurs during conversion.
-	/// </returns>
-	/// <remarks>
-	/// If the key implements <see cref="IFormattable"/>, its <see cref="IFormattable.ToString(string?, IFormatProvider?)"/>
-	/// method is used with the invariant culture. Otherwise, the key's <see cref="object.ToString"/> method is used.
-	/// Any bidirectional control characters are stripped from the resulting string.
-	/// </remarks>
-	private static string KeyToInvariantOrdinalString(object? key)
-	{
-		if (key == null) return string.Empty;
-		try
-		{
-			if (key is IFormattable f)
-			{
-				// ReSharper disable once NullCoalescingConditionIsAlwaysNotNullAccordingToAPIContract
-				return TextPostProcessor.StripBiDiControls(f.ToString(null, CultureInfo.InvariantCulture) ?? string.Empty);
-			}
-
-			// ReSharper disable once NullCoalescingConditionIsAlwaysNotNullAccordingToAPIContract
-			return TextPostProcessor.StripBiDiControls(key.ToString() ?? string.Empty);
-		}
-		catch
-		{
-			return string.Empty;
-		}
-	}
-
-	/// <summary>
-	/// Appends an <see cref="Array"/> value to the output builder in a concise,
-	/// human-readable form including its element type and dimensional sizes.
-	/// </summary>
-	/// <param name="builder">
-	/// The <see cref="StringBuilder"/> that receives the formatted output.
-	/// </param>
-	/// <param name="array">
-	/// The array instance to format. May be multidimensional; must not be <see langword="null"/>.
-	/// </param>
-	/// <param name="options">
-	/// Object formatting options controlling maximum collection items and recursion depth.
-	/// </param>
-	/// <param name="depth">
-	/// Current recursion depth (root = 0). Used to enforce <see cref="PrettyObjectOptions.MaxDepth"/>.
-	/// </param>
-	/// <param name="visited">
-	/// Set of already-visited reference objects used for cycle detection. Arrays are tracked by reference identity.
-	/// </param>
-	/// <param name="typeOptions">
-	/// Type-name rendering options forwarded to <see cref="PrettyTypeEngine"/> when printing the element type.
-	/// </param>
-	/// <param name="tfc">
-	/// An optional <see cref="TextFormatContext"/> providing newline, indentation, and culture information.<br/>
-	/// If <see langword="null"/>, the engine uses platform defaults.
-	/// </param>
+	/// <param name="builder">Target <see cref="StringBuilder"/>.</param>
+	/// <param name="array">The array to render.</param>
+	/// <param name="options">Formatting options (limits, layout flags, recursion depth).</param>
+	/// <param name="depth">Current recursion depth used for indentation in multi-line layout.</param>
+	/// <param name="visited">Cycle-detection set passed through to <see cref="AppendObject"/>.</param>
+	/// <param name="typeOptions">Type-name rendering options (forwarded to <see cref="PrettyTypeEngine"/>).</param>
+	/// <param name="tfc">Text formatting context (newline, indent token, culture).</param>
 	/// <remarks>
 	///     <para>
-	///     For one-dimensional arrays the method prints a flat initializer-like list of elements, limited
-	///     by <see cref="PrettyObjectOptions.MaxCollectionItems"/> if configured (e.g., <c>Int32[3] { 1, 2, 3 }</c>).
+	///     <b>1D arrays:</b> Rendered as <c>ElementType[Length] { … }</c>. Multi-line layout is chosen if
+	///     <see cref="PrettyObjectOptions.AllowMultiline"/> is <see langword="true"/> and either more than one
+	///     element is to be emitted or the first rendered element already contains a line break (LF/CR/VT/FF/NEL/LS/PS).
+	///     Item limiting via <see cref="PrettyObjectOptions.MaxCollectionItems"/> is respected; truncation is shown
+	///     with an ellipsis <c>…</c>.
 	///     </para>
 	///     <para>
-	///     Multidimensional arrays are rendered as <c>TypeName[Dim1×Dim2×…] { … }</c> without enumerating
-	///     individual elements (e.g., <c>String[2×4] { … }</c>).
+	///     <b><c>byte[]</c>:</b> Printed in compact hexadecimal (e.g., <c>byte[5] { 0x0A, 0x1F, … }</c>) for readability.
+	///     This special case remains for performance; it also supports multi-line if enabled.
 	///     </para>
 	///     <para>
-	///     <b>Note on <c>byte[]</c>:</b>
-	///     Byte arrays are handled as a dedicated special case. Instead of formatting each <c>byte</c>
-	///     as a number, they are printed in a compact hexadecimal form with a length prefix
-	///     (e.g., <c>byte[5] { 0x0A, 0x1F, 0x2C, … }</c>).
-	///     This diverges from the generic 1D array path for performance and readability.
+	///     <b>Multidimensional arrays:</b> Printed as <c>ElementType[Dim1×Dim2×…] { … }</c> without enumerating all elements,
+	///     mirroring the existing compact behavior.
+	///     </para>
+	///     <para>
+	///     Unlike dictionaries/enumerables, arrays already carry their length in the header (e.g., <c>[Length]</c>),
+	///     therefore no extra <c>(Count = n)</c> suffix is appended.
 	///     </para>
 	/// </remarks>
 	private static void AppendArray(
@@ -423,75 +646,243 @@ static class PrettyObjectEngine
 		PrettyTypeOptions   typeOptions,
 		TextFormatContext   tfc)
 	{
-		// Special (and fast) handling for byte arrays.
+		// ---- Fast special case: byte[] as hex ------------------------------------------------------
+		bool fitsInline;
+		int inlineOverhead;
+
 		if (array is byte[] bytes)
 		{
-			int count = bytes.Length;
-			int show = options.MaxCollectionItems >= 0 ? Math.Min(count, options.MaxCollectionItems) : count;
-			builder.Append("byte[").Append(count).Append("] { ");
-			for (int i = 0; i < show; i++)
+			int total = bytes.Length;
+			int limit = options.MaxCollectionItems >= 0 ? Math.Min(total, options.MaxCollectionItems) : total;
+
+			// Header: "byte[Length] "
+			builder.Append("byte[").Append(total.ToString(tfc.Culture)).Append("] ");
+
+			// Materialize rendered tokens once (respecting 'limit').
+			var tokens = new List<string>(limit);
+			for (int i = 0; i < limit; i++)
+			{
+				tokens.Add("0x" + bytes[i].ToString("X2", tfc.Culture));
+			}
+
+			// Inline-first: prefer single-line if the whole content fits, irrespective of thresholds.
+			inlineOverhead = limit < total ? 2 + tfc.TruncationMarker.Length : 0;
+			fitsInline = !ExceedsInlineWidth(tokens, options.MaxLineContentWidth, separatorLength: 2, inlineOverhead);
+
+			if (!options.AllowMultiline || fitsInline)
+			{
+				builder.Append("{ ");
+				for (int i = 0; i < tokens.Count; i++)
+				{
+					if (i > 0) builder.Append(", ");
+					builder.Append(tokens[i]);
+				}
+				if (limit < total) builder.Append(", ").Append(tfc.TruncationMarker);
+				builder.Append(" }");
+				return;
+			}
+
+			// Multi-line (flow-wrapped if enabled)
+			builder.Append('{').Append(tfc.NewLine);
+			if (options.FlowItemsInMultiline)
+			{
+				AppendFlowWrappedSequence(
+					builder,
+					tokens,
+					depth + 1,
+					tfc,
+					options.MaxLineContentWidth,
+					hasMoreAfter: limit < total);
+			}
+			else
+			{
+				for (int i = 0; i < tokens.Count; i++)
+				{
+					AppendRepeat(builder, tfc.Indent, depth + 1);
+					builder.Append(tokens[i]);
+					if (i < tokens.Count - 1 || limit < total) builder.Append(',');
+					builder.Append(tfc.NewLine);
+				}
+			}
+
+			if (limit < total)
+			{
+				if (options.FlowItemsInMultiline)
+				{
+					AppendFlowWrappedSequence(
+						builder,
+						[tfc.TruncationMarker],
+						depth + 1,
+						tfc,
+						options.MaxLineContentWidth,
+						hasMoreAfter: false);
+				}
+				else
+				{
+					AppendRepeat(builder, tfc.Indent, depth + 1);
+					builder.Append(tfc.TruncationMarker).Append(tfc.NewLine);
+				}
+			}
+
+			AppendRepeat(builder, tfc.Indent, depth);
+			builder.Append('}');
+			return;
+		}
+
+
+		// ---- Multi-dimensional arrays: keep compact summary -----------------------------------------
+		if (array.Rank > 1)
+		{
+			// "ElementType[Dim1×Dim2×…] { … }"
+			Type? elementType = array.GetType().GetElementType();
+			if (elementType != null)
+				PrettyTypeEngine.AppendType(builder, elementType, typeOptions, tfc);
+			else
+				builder.Append("Array");
+
+			builder.Append('[');
+			for (int d = 0; d < array.Rank; d++)
+			{
+				if (d > 0) builder.Append('×');
+				builder.Append(array.GetLength(d).ToString(tfc.Culture));
+			}
+			builder.Append("] { ").Append(tfc.TruncationMarker).Append(" }");
+			return;
+		}
+
+
+		// ---- 1D array (general case) ----------------------------------------------------------------
+		// Header: "ElementType[Length] "
+		int length = array.Length;
+		Type? elemType = array.GetType().GetElementType();
+		if (elemType != null)
+			PrettyTypeEngine.AppendType(builder, elemType, typeOptions, tfc);
+		else
+			builder.Append("Array");
+
+		builder.Append('[').Append(length.ToString(tfc.Culture)).Append("] ");
+
+		// How many items to show?
+		int max = options.MaxCollectionItems >= 0 ? Math.Min(length, options.MaxCollectionItems) : length;
+
+		// Empty representation
+		if (max == 0)
+		{
+			builder.Append("{ }");
+			return;
+		}
+
+		// Build tokens for the visible slice (up to 'max') to decide inline vs. multiline.
+		var items = new List<string>(max);
+		for (int i = 0; i < max; i++)
+		{
+			var sb = new StringBuilder(128);
+			object? element = array.GetValue(i);
+			AppendObject(sb, element, options, depth + 1, visited, typeOptions, tfc);
+			items.Add(sb.ToString());
+		}
+
+		bool anyBreaks = false;
+		for (int i = 0; i < items.Count; i++)
+		{
+			if (ContainsLineBreak(items[i]))
+			{
+				anyBreaks = true;
+				break;
+			}
+		}
+
+		// Inline-first decision
+		inlineOverhead = max < length ? 2 + tfc.TruncationMarker.Length : 0;
+		fitsInline = !anyBreaks && !ExceedsInlineWidth(items, options.MaxLineContentWidth, separatorLength: 2, inlineOverhead);
+
+		if (!options.AllowMultiline || fitsInline)
+		{
+			builder.Append("{ ");
+			for (int i = 0; i < items.Count; i++)
 			{
 				if (i > 0) builder.Append(", ");
-				builder.Append("0x").Append(bytes[i].ToString("X2", CultureInfo.InvariantCulture));
+				builder.Append(items[i]);
 			}
-			if (show < count) builder.Append(", …");
+			if (max < length) builder.Append(", ").Append(tfc.TruncationMarker);
 			builder.Append(" }");
 			return;
 		}
 
-		// --- Existing logic for all other array types ---
+		// Multi-line layout
+		builder.Append('{').Append(tfc.NewLine);
 
-		Type elementType = array.GetType().GetElementType() ?? typeof(object);
-		PrettyTypeEngine.AppendType(builder, elementType, typeOptions, tfc);
-		builder.Append("[");
-
-		// Ranks like 3×4×2
-		for (int d = 0; d < array.Rank; d++)
+		if (options.FlowItemsInMultiline)
 		{
-			if (d > 0) builder.Append('×');
-			builder.Append(array.GetLength(d));
-		}
-		builder.Append("] ");
+			AppendFlowWrappedSequence(
+				builder,
+				items,
+				depth + 1,
+				tfc,
+				options.MaxLineContentWidth,
+				hasMoreAfter: max < length);
 
-		// Flatten for 1D arrays only
-		if (array.Rank == 1)
-		{
-			builder.Append("{ ");
-			int max = options.MaxCollectionItems >= 0 ? options.MaxCollectionItems : int.MaxValue;
-			int shown = 0;
-			foreach (object? elem in array)
+			if (max < length)
 			{
-				if (shown++ > 0) builder.Append(", ");
-				if (shown > max)
-				{
-					builder.Append('…');
-					break;
-				}
-				AppendObject(builder, elem, options, depth + 1, visited, typeOptions, tfc);
+				AppendFlowWrappedSequence(
+					builder,
+					[tfc.TruncationMarker],
+					depth + 1,
+					tfc,
+					options.MaxLineContentWidth,
+					hasMoreAfter: false);
 			}
-			builder.Append(" }");
 		}
 		else
 		{
-			// For multidimensional arrays, just show element type and dimensions
-			builder.Append("{ … }");
+			for (int i = 0; i < items.Count; i++)
+			{
+				AppendRepeat(builder, tfc.Indent, depth + 1);
+				builder.Append(items[i]);
+				if (i < items.Count - 1 || max < length) builder.Append(',');
+				builder.Append(tfc.NewLine);
+			}
+			if (max < length)
+			{
+				AppendRepeat(builder, tfc.Indent, depth + 1);
+				builder.Append(tfc.TruncationMarker).Append(tfc.NewLine);
+			}
 		}
+
+		AppendRepeat(builder, tfc.Indent, depth);
+		builder.Append('}');
 	}
 
 	/// <summary>
-	/// Appends an enumerable value like <c>[ item1, item2, … ] (Count = N)</c>.
-	/// Honors maximum item limits.
+	/// Appends an enumerable value to <paramref name="builder"/> in a compact single-line form
+	/// (e.g., <c>[ a, b, c ]</c>) or a multi-line indented block when permitted and beneficial.
 	/// </summary>
 	/// <param name="builder">Target <see cref="StringBuilder"/>.</param>
 	/// <param name="enumerable">The enumerable to render.</param>
-	/// <param name="options">Formatting options (item limits, depth, type-name mode).</param>
-	/// <param name="depth">Current recursion depth.</param>
-	/// <param name="visited">Reference set used to detect and avoid cycles.</param>
-	/// <param name="typeOptions">Type-name rendering options for nested values.</param>
-	/// <param name="tfc">
-	/// An optional <see cref="TextFormatContext"/> providing newline, indentation, and culture information.<br/>
-	/// If <see langword="null"/>, the engine uses platform defaults.
-	/// </param>
+	/// <param name="options">Formatting options (limits, depth, layout flags).</param>
+	/// <param name="depth">Current recursion depth, used for indentation in multi-line layout.</param>
+	/// <param name="visited">Cycle-detection set, passed through to <see cref="AppendObject"/>.</param>
+	/// <param name="typeOptions">Type-name rendering options forwarded to nested object formatting.</param>
+	/// <param name="tfc">Text formatting context (newline, indentation token, culture).</param>
+	/// <remarks>
+	///     <para>
+	///     <b>Layout</b> – Multi-line layout is selected iff <see cref="PrettyObjectOptions.AllowMultiline"/> is
+	///     <see langword="true"/> and either more than one item is expected or the first rendered item already contains a
+	///     line break (LF, CR, VT, FF, NEL, LS, PS). Otherwise, a single-line representation is used.
+	///     </para>
+	///     <para>
+	///     <b>Limits</b> – Respects <see cref="PrettyObjectOptions.MaxCollectionItems"/> (0 =&gt; no items; negative =&gt; no limit).
+	///     When the limit truncates output and more items are present, an ellipsis <c>…</c> is appended.
+	///     </para>
+	///     <para>
+	///     <b>Count suffix</b> – If the total item count can be obtained cheaply via <c>TryGetKnownCount()</c>, the method prints
+	///     <c>(Count = n)</c>. If the count is unknown but truncation occurred, the method prints <c>(Count ≥ m)</c>, where
+	///     <c>m</c> is the number of printed items plus one.
+	///     </para>
+	///     <para>
+	///     <b>Note:</b> The method does <em>not</em> sort enumerables; order is preserved as provided by the source.
+	///     </para>
+	/// </remarks>
 	private static void AppendEnumerable(
 		StringBuilder       builder,
 		IEnumerable         enumerable,
@@ -501,41 +892,149 @@ static class PrettyObjectEngine
 		PrettyTypeOptions   typeOptions,
 		TextFormatContext   tfc)
 	{
-		// ReSharper disable once PossibleMultipleEnumeration
+		// Try to get a cheap count (arrays, lists, IReadOnlyCollection, …)
 		int? knownCount = TryGetKnownCount(enumerable);
-		int max = options.MaxCollectionItems >= 0 ? options.MaxCollectionItems : int.MaxValue;
-		builder.Append("[ ");
 
-		int i = 0;
-		bool hasMore = false;
-		// ReSharper disable once PossibleMultipleEnumeration
-		foreach (object? item in enumerable)
+		// Determine item limit
+		int limit = options.MaxCollectionItems >= 0 ? options.MaxCollectionItems : int.MaxValue;
+
+		// Cap only the *preview* used to decide inline vs. multiline.
+		// This prevents buffering enormous sequences when Unlimited is selected.
+		const int decisionPreviewCap = 256;
+		int decisionLimit = Math.Min(limit, decisionPreviewCap);
+
+		// If zero items should be shown, emit an empty bracket pair and the most accurate count we know.
+		if (limit == 0)
 		{
-			if (i > 0 && i < max) builder.Append(", ");
-			if (i >= max)
+			builder.Append("[ ]");
+			if (knownCount.HasValue)
+				builder.Append(" (Count = ").Append(knownCount.Value.ToString(tfc.Culture)).Append(')');
+			else
+				builder.Append(" (Count ≥ 0)");
+			return;
+		}
+
+		// Enumerate and render up to 'decisionLimit' items for layout decisions + output.
+		var items = new List<string>(decisionLimit);
+		int emitted = 0;
+		IEnumerator e = enumerable.GetEnumerator();
+		bool hasMore = false;
+
+		try
+		{
+			while (emitted < decisionLimit && e.MoveNext())
 			{
-				hasMore = true;
+				var sb = new StringBuilder(128);
+				AppendObject(sb, e.Current, options, depth + 1, visited, typeOptions, tfc);
+				items.Add(sb.ToString());
+				emitted++;
+			}
+			// Peek one more to know if there are more beyond the preview
+			if (e.MoveNext()) hasMore = true;
+		}
+		finally
+		{
+			(e as IDisposable)?.Dispose();
+		}
+
+		// Empty sequence
+		if (items.Count == 0)
+		{
+			builder.Append("[ ]");
+			if (knownCount.HasValue)
+				builder.Append(" (Count = ").Append(knownCount.Value.ToString(tfc.Culture)).Append(')');
+			else
+				builder.Append(" (Count = 0)");
+			return;
+		}
+
+		// Check for line breaks
+		bool anyBreaks = false;
+		for (int index = 0; index < items.Count; index++)
+		{
+			if (ContainsLineBreak(items[index]))
+			{
+				anyBreaks = true;
 				break;
 			}
-
-			AppendObject(builder, item, options, depth + 1, visited, typeOptions, tfc);
-			i++;
 		}
 
-		if (hasMore)
+		// Inline-first: prefer single line if width permits and there are no line breaks.
+		// (include ", " + truncation marker length when judging inline width)
+		int inlineOverhead = hasMore ? 2 + tfc.TruncationMarker.Length : 0;
+		bool fitsInline = !anyBreaks && !ExceedsInlineWidth(items, options.MaxLineContentWidth, separatorLength: 2, overhead: inlineOverhead);
+
+		if (!options.AllowMultiline || fitsInline)
 		{
-			if (i > 0) builder.Append(", ");
-			builder.Append('…');
+			builder.Append("[ ");
+			for (int idx = 0; idx < items.Count; idx++)
+			{
+				if (idx > 0) builder.Append(", ");
+				builder.Append(items[idx]);
+			}
+			if (hasMore) builder.Append(", ").Append(tfc.TruncationMarker);
+			builder.Append(" ]");
+
+			// Count suffix
+			if (knownCount.HasValue)
+				builder.Append(" (Count = ").Append(knownCount.Value.ToString(tfc.Culture)).Append(')');
+			else if (hasMore)
+				builder.Append(" (Count ≥ ").Append((items.Count + 1).ToString(tfc.Culture)).Append(')');
+			else
+				builder.Append(" (Count = ").Append(items.Count.ToString(tfc.Culture)).Append(')');
+			return;
 		}
 
-		builder.Append(" ]");
+		// Multi-line (flow-wrapped if enabled)
+		builder.Append('[').Append(tfc.NewLine);
 
+		if (options.FlowItemsInMultiline)
+		{
+			AppendFlowWrappedSequence(
+				builder,
+				items,
+				depth + 1,
+				tfc,
+				options.MaxLineContentWidth,
+				hasMoreAfter: hasMore);
+
+			if (hasMore)
+			{
+				AppendFlowWrappedSequence(
+					builder,
+					[tfc.TruncationMarker],
+					depth + 1,
+					tfc,
+					options.MaxLineContentWidth,
+					hasMoreAfter: false);
+			}
+		}
+		else
+		{
+			for (int idx = 0; idx < items.Count; idx++)
+			{
+				AppendRepeat(builder, tfc.Indent, depth + 1);
+				builder.Append(items[idx]);
+				if (idx < items.Count - 1 || hasMore) builder.Append(',');
+				builder.Append(tfc.NewLine);
+			}
+			if (hasMore)
+			{
+				AppendRepeat(builder, tfc.Indent, depth + 1);
+				builder.Append(tfc.TruncationMarker).Append(tfc.NewLine);
+			}
+		}
+
+		AppendRepeat(builder, tfc.Indent, depth);
+		builder.Append(']');
+
+		// Count suffix mirrors dictionary/enumerable semantics
 		if (knownCount.HasValue)
 			builder.Append(" (Count = ").Append(knownCount.Value.ToString(tfc.Culture)).Append(')');
 		else if (hasMore)
-			builder.Append(" (Count ≥ ").Append((i + 1).ToString(tfc.Culture)).Append(')');
+			builder.Append(" (Count ≥ ").Append((items.Count + 1).ToString(tfc.Culture)).Append(')');
 		else
-			builder.Append(" (Count = ").Append(i.ToString(tfc.Culture)).Append(')');
+			builder.Append(" (Count = ").Append(items.Count.ToString(tfc.Culture)).Append(')');
 	}
 
 	// ───────────────────────── AppendObjectMembers() Cache ─────────────────────────
@@ -773,8 +1272,24 @@ static class PrettyObjectEngine
 	/// </remarks>
 	private sealed class CountAccessorHolder
 	{
+		/// <summary>
+		/// Represents a static instance of <see cref="CountAccessorHolder"/> with no associated value.
+		/// </summary>
+		/// <remarks>
+		/// This instance is initialized with a <see langword="null"/> value and can be used as a default
+		/// or placeholder where no valid <see cref="CountAccessorHolder"/> is required.
+		/// </remarks>
 		internal static readonly CountAccessorHolder None = new(null);
-		internal readonly        Func<object, int>?  Getter;
+
+		/// <summary>
+		/// Represents a delegate that retrieves an integer value from an object.
+		/// </summary>
+		/// <remarks>
+		/// The delegate takes an object as input and returns an integer. This can be used to extract or
+		/// compute  a value based on the provided object. If the delegate is null, no retrieval operation is
+		/// defined.
+		/// </remarks>
+		internal readonly Func<object, int>? Getter;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="CountAccessorHolder"/> class with the specified getter function.
@@ -890,6 +1405,189 @@ static class PrettyObjectEngine
 	{
 		Type type = obj.GetType();
 		return !type.IsValueType && obj is not string;
+	}
+
+	// ───────────────────────── Multiline helpers ─────────────────────────
+
+	/// <summary>
+	/// Determines whether the specified string contains a line break (LF, CR, VT, FF, NEL, LS, or PS).
+	/// </summary>
+	/// <param name="s">The string to check for line breaks.</param>
+	/// <returns>
+	/// <see langword="true"/> if <paramref name="s"/> contains at least one line break character;<br/>
+	/// otherwise, <see langword="false"/>.
+	/// </returns>
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static bool ContainsLineBreak(string s)
+	{
+		// ReSharper disable once ForeachCanBeConvertedToQueryUsingAnotherGetEnumerator
+		foreach (char ch in s)
+		{
+			if (Unicode.IsLineBreak(ch))
+				return true;
+		}
+
+		return false;
+	}
+
+	/// <summary>
+	/// Returns <see langword="true"/> if the inline content composed from the given
+	/// segments would exceed the specified maximum width. The <paramref name="separatorLength"/>
+	/// parameter represents the length of the delimiter inserted between segments (e.g., ", " = 2).
+	/// A non-positive <paramref name="maxWidth"/> disables the check.
+	/// </summary>
+	private static bool ExceedsInlineWidth(
+		IReadOnlyList<string> segments,
+		int                   maxWidth,
+		int                   separatorLength,
+		int                   overhead = 0)
+	{
+		if (maxWidth <= 0) return false;
+		int total = overhead;
+		for (int i = 0; i < segments.Count; i++)
+		{
+			if (i > 0) total += separatorLength;
+			total += segments[i].Length;
+			if (total > maxWidth) return true;
+		}
+		return false;
+	}
+
+	/*
+	/// <summary>
+	/// Determines whether the inline content for a dictionary would exceed the specified maximum width.
+	/// This variant avoids allocating per-entry strings by combining key/value lengths with a fixed
+	/// glue length (e.g., " = " or tuple glue).
+	/// </summary>
+	/// <returns>
+	/// <see langword="true"/> if the combined length of all entries exceeds;<br/>
+	/// otherwise, <see langword="false"/>.
+	/// </returns>
+	private static bool ExceedsInlineWidthForDictionary(
+		IReadOnlyList<(string KR, string VR)> entries,
+		int                                   tupleGlueLength,
+		int                                   maxWidth,
+		int                                   separatorLength)
+	{
+		if (maxWidth <= 0) return false;
+		int total = 0;
+		for (int i = 0; i < entries.Count; i++)
+		{
+			if (i > 0) total += separatorLength;
+			total += entries[i].KR.Length + entries[i].VR.Length + tupleGlueLength;
+			if (total > maxWidth) return true;
+		}
+		return false;
+	}
+	*/
+
+	/// <summary>
+	/// Appends a sequence of already-rendered item strings using a flow layout:
+	/// multiple items per line up to a maximum line width; inserts new lines and
+	/// indentation as needed. Items are separated by ", " like in inline output.
+	/// <para>
+	/// If <paramref name="hasMoreAfter"/> is <see langword="true"/>, the method will
+	/// also append a trailing comma at the end of the last printed line to indicate
+	/// that more content follows (e.g., an ellipsis "…" rendered by the caller on a
+	/// subsequent line). This keeps the comma semantics consistent: commas separate
+	/// items, regardless of line wrapping.
+	/// </para>
+	/// </summary>
+	/// <param name="builder">
+	/// Target <see cref="System.Text.StringBuilder"/> to receive the formatted output.
+	/// </param>
+	/// <param name="items">
+	/// The already-rendered item strings to print (each string is assumed to be exactly the
+	/// visible token for a single item, including quotes/escapes as required).
+	/// </param>
+	/// <param name="depth">
+	/// Indentation depth in the current block; each visual line begins with <c>depth</c>
+	/// repetitions of <see cref="TextFormatContext.Indent"/>.
+	/// </param>
+	/// <param name="tfc">
+	/// Text formatting context providing indentation string and line break sequence.
+	/// </param>
+	/// <param name="maxLineWidth">
+	/// Maximum number of characters per visual line for the content portion. The width is
+	/// applied to the text inside the braces/brackets only (i.e., between "{ … }" or "[ … ]").
+	/// A value &lt;= 0 disables wrapping by width (all items go onto one line).
+	/// </param>
+	/// <param name="hasMoreAfter">
+	/// When <see langword="true"/>, a trailing comma is emitted at the end of the last
+	/// printed line because additional content will follow on the next line (for example
+	/// an ellipsis "…").
+	/// </param>
+	private static void AppendFlowWrappedSequence(
+		StringBuilder         builder,
+		IReadOnlyList<string> items,
+		int                   depth,
+		TextFormatContext     tfc,
+		int                   maxLineWidth,
+		bool                  hasMoreAfter)
+	{
+		// Trivial case: nothing to print.
+		if (items.Count == 0)
+			return;
+
+		int i = 0;
+		while (i < items.Count)
+		{
+			// Start a new visual line with the current indentation.
+			AppendRepeat(builder, tfc.Indent, depth);
+
+			int lineWidth = 0; // accumulated content width on this visual line
+			bool firstOnLine = true;
+
+			// Greedily pack items onto the current line until adding the next token
+			// would exceed the configured line width (if enabled).
+			while (i < items.Count)
+			{
+				string token = items[i];
+
+				// If it's the first token on the line, we need only its length;
+				// otherwise we need ", " (2 chars) plus the token length.
+				int needed = firstOnLine ? token.Length : 2 + token.Length;
+
+				// If a width is configured and adding the next token would exceed it,
+				// we stop here and wrap to the next visual line.
+				if (maxLineWidth > 0 && !firstOnLine && lineWidth + needed > maxLineWidth)
+					break;
+
+				// Add separator before the token if we already printed something on this line.
+				if (!firstOnLine)
+				{
+					builder.Append(", ");
+					lineWidth += 2;
+				}
+
+				// Append the token itself and update the accumulated width.
+				builder.Append(token);
+				lineWidth += token.Length;
+
+				firstOnLine = false;
+				i++;
+			}
+
+			// If more items remain, or the caller announced that additional content
+			// follows (e.g., an ellipsis on the next line), append a trailing comma.
+			if (i < items.Count || hasMoreAfter)
+				builder.Append(',');
+
+			// Terminate this visual line.
+			builder.Append(tfc.NewLine);
+		}
+	}
+
+	/// <summary>
+	/// Appends <paramref name="indent"/> exactly <paramref name="count"/> times.
+	/// </summary>
+	/// <param name="builder">The <see cref="StringBuilder"/> that receives the indentation.</param>
+	/// <param name="indent">The indentation string to append.</param>
+	/// <param name="count">The number of times to append <paramref name="indent"/>.</param>
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static void AppendRepeat(StringBuilder builder, string indent, int count)
+	{
+		for (int i = 0; i < count; i++) builder.Append(indent);
 	}
 
 	/// <summary>

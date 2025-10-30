@@ -138,7 +138,7 @@ static class PrettyExceptionEngine
 		AppendMeta(builder, exception, options, depth, typeOptions, tfc);
 
 		// Data
-		if (options.IncludeData) AppendData(builder, exception, options, depth, typeOptions, tfc);
+		if (options.IncludeData) AppendData(builder, exception, options, depth, tfc);
 
 		// Stack trace
 		if (options.IncludeStackTrace) AppendStackTrace(builder, exception, options, depth, tfc);
@@ -190,7 +190,10 @@ static class PrettyExceptionEngine
 				int i = 0;
 				foreach (Exception inner in multipleInner)
 				{
-					if (inner == null) continue;              // Safety check
+					// Safety check
+					// ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
+					if (inner == null) continue;
+
 					AppendRepeat(builder, tfc.Indent, depth); // Indent the "Inner[x]:" line
 					// Add index only if it was originally an Aggregate or if flattened
 					bool isOriginalAggregate = exception is AggregateException;
@@ -287,182 +290,131 @@ static class PrettyExceptionEngine
 	/// <param name="exception">The exception whose data is rendered.</param>
 	/// <param name="options">Formatting options controlling whether to include data and how many items to print.</param>
 	/// <param name="depth">The current recursion depth (used for indentation).</param>
-	/// <param name="typeOptions">Type-name rendering options used for compact value formatting.</param>
 	/// <param name="tfc">The text-formatting context (newline/indent/culture).</param>
-	/// <remarks>
-	/// Values are formatted with <see cref="AppendDataValue(StringBuilder, object, PrettyTypeOptions, TextFormatContext)"/>
-	/// to avoid deep recursion or overly verbose output.
-	/// </remarks>
 	private static void AppendData(
 		StringBuilder          builder,
 		Exception              exception,
 		PrettyExceptionOptions options,
 		int                    depth,
-		PrettyTypeOptions      typeOptions,
 		TextFormatContext      tfc)
 	{
-		if (exception.Data.Count == 0 || options.DataMaxItems == 0)
+		// Early out: No data to render
+		if (!options.IncludeData || exception.Data.Count == 0)
 			return;
 
+		// Resolve object formatting options for Data.
+		PrettyObjectOptions objectOptions = options.ResolveDataObjectOptions();
+
+		// If the profile limits to "0 items", do not render anything
+		if (objectOptions.MaxCollectionItems == 0)
+			return;
+
+		// Consistent heading "Data:"
 		AppendRepeat(builder, tfc.Indent, depth);
-		builder.Append("  Data:").Append(tfc.NewLine);
+		builder.Append("  Data:");
 
-		// Sort keys for deterministic output
-		// (store original keys to avoid multiple ToString() calls to reduce GC pressure)
-		var keys = new List<(string KeyString, object? OriginalKey)>();
-		foreach (object key in exception.Data.Keys)
+		// Render uniformly with PrettyObjectEngine to respect options (e.g., empty dictionary).
+		string rendered = PrettyObjectEngine.Format(exception.Data, objectOptions, tfc);
+
+		// Render: Inline vs. Block
+		if (IsMultiline(rendered))
 		{
-			keys.Add((key?.ToString() ?? string.Empty, key));
+			// Block rendering
+			builder.Append(tfc.NewLine);
+			AppendIndentedBlock(builder, rendered, tfc, depth + 1);
+			builder.Append(tfc.NewLine);
 		}
-		try
+		else
 		{
-			// Sort by string representation for stability
-			keys.Sort((a, b) => string.Compare(a.KeyString, b.KeyString, StringComparison.Ordinal));
-		}
-		catch
-		{
-			// Fallback to default order if keys are not comparable.
-		}
-
-		int shown = 0;
-		foreach ((string _, object? key) in keys)
-		{
-			if (options.DataMaxItems >= 0 && shown >= options.DataMaxItems)
-			{
-				AppendRepeat(builder, tfc.Indent, depth);
-				builder.Append("    …").Append(tfc.NewLine);
-				break;
-			}
-
-			// Get value
-			object? value;
-			try { value = exception.Data[key!]; }
-			catch { value = "!(Access Error)"; /* defensive */ }
-
-			// Format key and value directly into the builder
-			AppendRepeat(builder, tfc.Indent, depth);
-			if (options.DataDictionaryFormat == DictionaryFormat.Tuples)
-			{
-				builder.Append("    (");
-				AppendDataValue(builder, key, typeOptions, tfc);
-				builder.Append(", ");
-				AppendDataValue(builder, value, typeOptions, tfc);
-				builder.Append(')').Append(tfc.NewLine);
-			}
-			else // KeyEqualsValue (default)
-			{
-				builder.Append("    ");
-				AppendDataValue(builder, key, typeOptions, tfc);
-				builder.Append(" = ");
-				AppendDataValue(builder, value, typeOptions, tfc);
-				builder.Append(tfc.NewLine);
-			}
-
-			shown++;
+			// Inline rendering
+			builder.Append(' ').Append(rendered).Append(tfc.NewLine);
 		}
 	}
 
 	/// <summary>
-	/// Formats a value from the <see cref="Exception.Data"/> dictionary using simple, non-recursive rules,
-	/// applying truncation rules from the <see cref="TextFormatContext"/>.
+	/// Determines whether the specified string contains multiple lines.
 	/// </summary>
-	/// <param name="builder">The output target builder.</param>
-	/// <param name="value">The data key or value to format; may be null.</param>
-	/// <param name="typeOptions">Type-name rendering options used when falling back to a type name.</param>
-	/// <param name="tfc">The text formatting context, providing truncation rules (MaxLineLength, TruncationMarker).</param>
+	/// <param name="s">
+	/// The string to evaluate. Cannot be <see langword="null"/>.
+	/// </param>
 	/// <returns>
-	/// A short, truncated string representation. Strings are quoted. Known primitives are rendered invariantly;
-	/// complex values fall back to <see cref="object.ToString"/> if concise, otherwise to the value's type name.
+	/// <see langword="true"/> if the string contains at least one newline character ('\n');<br/>
+	/// otherwise, <see langword="false"/>.
 	/// </returns>
-	private static void AppendDataValue(
-		StringBuilder     builder,
-		object?           value,
-		PrettyTypeOptions typeOptions,
-		TextFormatContext tfc)
+	private static bool IsMultiline(string s)
 	{
-		if (value == null)
+		foreach (char ch in s)
 		{
-			builder.Append("<null>");
-			return;
+			if (Unicode.IsLineBreak(ch))
+				return true;
 		}
+		return false;
+	}
 
-		// Case 1: string
-		if (value is string s)
+	/// <summary>
+	/// Appends a block of text to the specified <see cref="StringBuilder"/>, applying indentation to the first line
+	/// and each subsequent line after a newline character.
+	/// </summary>
+	/// <param name="builder">The <see cref="StringBuilder"/> to which the indented block will be appended.</param>
+	/// <param name="block">The block of text to append. This text may contain newline characters.</param>
+	/// <param name="tfc">The <see cref="TextFormatContext"/> that specifies the indentation string to use.</param>
+	/// <param name="depth">The depth of indentation, determining how many times the indentation string is repeated.</param>
+	/// <remarks>
+	/// Each line in the block, including the first line and any lines following a newline character, is
+	/// prefixed with the specified number of repetitions of the indentation string.
+	/// </remarks>
+	private static void AppendIndentedBlock(
+		StringBuilder     builder,
+		string            block,
+		TextFormatContext tfc,
+		int               depth)
+	{
+		// Indent first line.
+		AppendRepeat(builder, tfc.Indent, depth);
+
+		// Append the block, indenting after each newline.
+		for (int i = 0; i < block.Length;)
 		{
-			builder.Append('\"');
+			char c = block[i];
 
-			string marker = tfc.TruncationMarker;
-			int cap = tfc.MaxLineLength > 0 ? tfc.MaxLineLength : s.Length;
-			// Decide truncation by *grapheme* count, not UTF-16 code units:
-			bool graphemesFit = cap > 0 && TextPostProcessor.SafePrefixCharCountByTextElements(s, 0, cap, s.Length) >= s.Length;
-			bool isTruncated = tfc.Truncate && cap > 0 && !graphemesFit;
-
-			if (!isTruncated)
+			// Handle CRLF as a single newline
+			if (c == '\r')
 			{
-				TextPostProcessor.AppendEscaped(builder, s, 0, s.Length);
-			}
-			else
-			{
-				int markerElems = new StringInfo(marker).LengthInTextElements;
-				int limitElems = cap - markerElems;
-				if (limitElems > 0)
+				if (i + 1 < block.Length && block[i + 1] == '\n')
 				{
-					int safeChars = TextPostProcessor.SafePrefixCharCountByTextElements(s, 0, limitElems, s.Length);
-					if (safeChars > 0)
-						TextPostProcessor.AppendEscaped(builder, s, 0, safeChars);
+					builder.Append('\r').Append('\n');
+					i += 2;
 				}
-				builder.Append(marker);
+				else
+				{
+					builder.Append('\r');
+					i++;
+				}
+				AppendRepeat(builder, tfc.Indent, depth);
+				continue;
 			}
 
-			builder.Append('\"');
-			return;
-		}
-
-		// Case 2: Known primitive types (bool, char)
-		if (value is bool b)
-		{
-			builder.Append(b ? "true" : "false");
-			return;
-		}
-		if (value is char c)
-		{
-			builder.Append('\'');
-			TextPostProcessor.AppendEscapedChar(builder, c);
-			builder.Append('\'');
-			return;
-		}
-
-		// Case 3: IFormattable (numbers, dates, Guids, etc.)
-		if (value is IFormattable formattable)
-		{
-			try
+			// LF
+			if (c == '\n')
 			{
-				builder.Append(formattable.ToString(null, tfc.Culture));
+				builder.Append('\n');
+				i++;
+				AppendRepeat(builder, tfc.Indent, depth);
+				continue;
 			}
-			catch
+
+			// Unicode line separators
+			if (c is '\u000B' or '\u000C' or '\u0085' or '\u2028' or '\u2029')
 			{
-				builder.Append("(!(format error))");
+				builder.Append(c);
+				i++;
+				AppendRepeat(builder, tfc.Indent, depth);
+				continue;
 			}
-			return;
+
+			builder.Append(c);
+			i++;
 		}
-
-		// Case 4: Fallback to object.ToString()
-		string? sToString;
-		try { sToString = value.ToString(); }
-		catch { sToString = null; } // Be safe if ToString() throws.
-
-		// If ToString() is useless (null, empty, or just returns the default Type.ToString()),
-		// we prefer printing the pretty-formatted type name instead.
-		if (string.IsNullOrEmpty(sToString) || sToString == value.GetType().ToString())
-		{
-			PrettyTypeEngine.AppendType(builder, value.GetType(), typeOptions, tfc);
-			return;
-		}
-
-		// Sanitize potential BiDi controls (unquoted text) *before* length truncation.
-		// ReSharper disable once RedundantSuppressNullableWarningExpression
-		string sanitized = TextPostProcessor.StripBiDiControls(sToString!);
-		builder.Append(TextPostProcessor.TruncateString(sanitized, tfc));
 	}
 
 	/// <summary>
@@ -534,7 +486,7 @@ static class PrettyExceptionEngine
 		if (lineCount == limit && startIndex < len)
 		{
 			AppendRepeat(builder, tfc.Indent, depth);
-			builder.Append("    …").Append(tfc.NewLine);
+			builder.Append("    ").Append(tfc.TruncationMarker).Append(tfc.NewLine);
 		}
 	}
 

@@ -24,7 +24,7 @@ public class PrettyOptionsBase<TOptions>
 	/// <summary>
 	/// Constant indicating that there is no limit.
 	/// </summary>
-	internal const int Unlimited = -1;
+	public const int Unlimited = -1;
 
 	#region Freeze Support
 
@@ -37,7 +37,7 @@ public class PrettyOptionsBase<TOptions>
 	/// Makes this options instance read-only. Subsequent attempts to mutate it will throw.
 	/// </summary>
 	/// <returns>
-	/// The frozen <see cref="PrettyAssemblyOptions"/> instance.
+	/// The frozen <see cref="TOptions"/> instance.
 	/// </returns>
 	public virtual TOptions Freeze()
 	{

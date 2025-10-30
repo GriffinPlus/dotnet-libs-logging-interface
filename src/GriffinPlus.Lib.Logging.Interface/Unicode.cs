@@ -5,6 +5,8 @@
 
 // ReSharper disable CanSimplifyStringEscapeSequence
 
+using System.Runtime.CompilerServices;
+
 namespace GriffinPlus.Lib.Logging;
 
 /// <summary>
@@ -19,9 +21,31 @@ static class Unicode
 	/// </summary>
 	public static readonly string NewLineCharacters =
 		"\u000A" + // line feed
+		"\u000B" + // vertical tab
 		"\u000C" + // form feed
 		"\u000D" + // carriage return
 		"\u0085" + // next line
 		"\u2028" + // line separator
 		"\u2029";  // paragraph separator
+
+	/// <summary>
+	/// Determines whether the specified character represents a line break.
+	/// </summary>
+	/// <param name="ch">The character to evaluate.</param>
+	/// <returns>
+	/// <see langword="true"/> if the character is a line break character;<br/>
+	/// otherwise, <see langword="false"/>.
+	/// </returns>
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static bool IsLineBreak(char ch)
+	{
+		return ch is
+			       '\u000A' or // line feed ('\n')
+			       '\u000B' or // vertical tab
+				   '\u000C' or // form feed
+			       '\u000D' or // carriage return ('\r')
+			       '\u0085' or // next line
+			       '\u2028' or // line separator
+			       '\u2029';   // paragraph separator
+	}
 }

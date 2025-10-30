@@ -19,15 +19,25 @@ public static class PrettyObjectPresets
 	/// </summary>
 	public static readonly PrettyObjectOptions Compact = new PrettyObjectOptions
 	{
-		MaxDepth = 1,
-		MaxCollectionItems = 3,
-		IncludeFields = false,
-		IncludeProperties = true,
-		IncludeNonPublic = false,
-		SortMembers = true,
-		ShowTypeHeader = true,
-		UseNamespaceForTypes = false,
-		DictionaryFormat = DictionaryFormat.KeyEqualsValue
+		// Type header / Type rendering behavior
+		ShowTypeHeader = true,                              // show type header for context
+		UseNamespaceForTypes = false,                       // use short type names to reduce noise
+		DictionaryFormat = DictionaryFormat.KeyEqualsValue, // compact dictionary style
+
+		// Layout / Multiline & Flow Wrapping
+		AllowMultiline = false,       // compact single-line representation
+		FlowItemsInMultiline = false, // no effect as multiline is disabled
+		MaxLineContentWidth = -1,     // no effect as multiline is disabled
+
+		// Depth / Item limits
+		MaxDepth = 1,           // shallow depth to keep output compact
+		MaxCollectionItems = 3, // few items to reduce noise
+
+		// Member Visibility and Ordering
+		IncludeFields = false,    // omit fields to reduce noise
+		IncludeProperties = true, // include properties for meaningful data
+		IncludeNonPublic = false, // include public members only
+		SortMembers = true        // stable output ordering
 	}.Freeze();
 
 	/// <summary>
@@ -35,15 +45,25 @@ public static class PrettyObjectPresets
 	/// </summary>
 	public static readonly PrettyObjectOptions Standard = new PrettyObjectOptions
 	{
-		MaxDepth = 2,
-		MaxCollectionItems = 5,
-		IncludeFields = true,
-		IncludeProperties = true,
-		IncludeNonPublic = false,
-		SortMembers = true,
-		ShowTypeHeader = true,
-		UseNamespaceForTypes = true,
-		DictionaryFormat = DictionaryFormat.KeyEqualsValue
+		// Type header / Type rendering behavior
+		ShowTypeHeader = true,                              // show type header for context
+		UseNamespaceForTypes = true,                        // use full type names for clarity
+		DictionaryFormat = DictionaryFormat.KeyEqualsValue, // compact dictionary style
+
+		// Layout / Multiline & Flow Wrapping
+		AllowMultiline = true,       // allow multiline for better readability
+		FlowItemsInMultiline = true, // flow items in multiline for better readability
+		MaxLineContentWidth = 120,   // wrap lines exceeding 120 characters
+
+		// Depth / Item limits
+		MaxDepth = 2,           // reasonable depth for readability
+		MaxCollectionItems = 5, // reasonable number of items for context
+
+		// Member Visibility and Ordering
+		IncludeFields = true,     // include fields for completeness
+		IncludeProperties = true, // include properties for meaningful data
+		IncludeNonPublic = false, // include public members only
+		SortMembers = true        // stable output ordering
 	}.Freeze();
 
 	/// <summary>
@@ -52,14 +72,24 @@ public static class PrettyObjectPresets
 	/// </summary>
 	public static readonly PrettyObjectOptions Verbose = new PrettyObjectOptions
 	{
-		MaxDepth = 4,
-		MaxCollectionItems = PrettyObjectOptions.Unlimited,
-		IncludeFields = true,
-		IncludeProperties = true,
-		IncludeNonPublic = true,
-		SortMembers = true,
-		ShowTypeHeader = true,
-		UseNamespaceForTypes = true,
-		DictionaryFormat = DictionaryFormat.KeyEqualsValue
+		// Type header / Type rendering behavior
+		ShowTypeHeader = true,                              // show type header for context
+		UseNamespaceForTypes = true,                        // use full type names for clarity
+		DictionaryFormat = DictionaryFormat.KeyEqualsValue, // compact dictionary style
+
+		// Layout / Multiline & Flow Wrapping
+		AllowMultiline = true,       // allow multiline for better readability
+		FlowItemsInMultiline = true, // flow items in multiline for better readability
+		MaxLineContentWidth = 120,   // wrap lines exceeding 120 characters
+
+		// Depth / Item limits
+		MaxDepth = 4,                                       // reasonable depth for readability
+		MaxCollectionItems = PrettyObjectOptions.Unlimited, // show all items
+
+		// Member Visibility and Ordering
+		IncludeFields = true,     // include fields for completeness
+		IncludeProperties = true, // include properties for meaningful data
+		IncludeNonPublic = true,  // include public and non-public members
+		SortMembers = true        // stable output ordering
 	}.Freeze();
 }

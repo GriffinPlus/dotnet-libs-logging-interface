@@ -123,7 +123,7 @@ static class PrettyAssemblyEngine
 				}
 
 				if (limit >= 0 && types.Length > limit)
-					builder.Append("  …").Append(tfc.NewLine);
+					builder.Append("  ").Append(tfc.TruncationMarker).Append(tfc.NewLine);
 			}
 		}
 
