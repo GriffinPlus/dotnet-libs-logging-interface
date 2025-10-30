@@ -1,6 +1,13 @@
 # Changelog
 ---
 
+## Release v1.3.1
+
+- Fixed various formatting issues involving the new formatter (especially formatting the `Exception.Data` dictionary).
+- Made formatting profile configurable in `LogWriter` class.
+
+---
+
 ## Release v1.3.0
 
 - Added explicit support for .NET Framework 4.8, .NET 6.0, and .NET 8.0.
