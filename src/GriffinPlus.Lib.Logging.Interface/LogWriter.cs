@@ -21,37 +21,7 @@ namespace GriffinPlus.Lib.Logging;
 /// </summary>
 public sealed class LogWriter
 {
-	private static          List<LogWriter>                  sLogWritersById                  = [];
-	private static          Dictionary<string, LogWriter>    sLogWritersByName                = new();
-	private static          List<LogWriterTag>               sLogWriterTagsById               = [];
-	private static          Dictionary<string, LogWriterTag> sLogWriterTagsByName             = new();
-	private static          ILogWriterConfiguration?         sLogWriterConfiguration          = null;
-	private static readonly IFormatProvider                  sDefaultFormatProvider           = CultureInfo.InvariantCulture;
-	private static readonly ThreadLocal<StringBuilder>       sBuilder                         = new(() => new StringBuilder());
-	private static readonly PrettyOptions                    sPrettyProfile                   = PrettyPresets.Standard;
-	private static readonly char[]                           sLineSeparators                  = Unicode.NewLineCharacters.ToCharArray();
-	private static readonly string[]                         sNewlineTokens                   = ["\r\n", "\r", "\n"];
-	private static readonly Regex                            sExtractGenericArgumentTypeRegex = new("^([^`]+)`\\d+$", RegexOptions.Compiled);
-	private static          int                              sNextId;
-	private readonly        List<WeakReference<LogWriter>>?  mSecondaryWriters;
-
-	/// <summary>
-	/// Occurs when a new log writer is registered.
-	/// The global logging lock (<see cref="LogGlobals.Sync"/>) is acquired when raising the event.
-	/// </summary>
-	public static event LogWriterRegisteredEventHandler? NewLogWriterRegistered;
-
-	/// <summary>
-	/// Occurs when a new log writer tag is registered.
-	/// The global logging lock (<see cref="LogGlobals.Sync"/>) is acquired when raising the event.
-	/// </summary>
-	public static event LogWriterTagRegisteredEventHandler? NewLogWriterTagRegistered;
-
-	/// <summary>
-	/// Occurs when a log writer writes a log message.
-	/// The global logging lock (<see cref="LogGlobals.Sync"/>) is not acquired when raising the event.
-	/// </summary>
-	public static event LogMessageWrittenEventHandler? LogMessageWritten;
+	#region Construction
 
 	/// <summary>
 	/// Initializes the <see cref="LogWriter"/> class.
@@ -94,44 +64,9 @@ public sealed class LogWriter
 		Tags = tags;
 	}
 
-	/// <summary>
-	/// Gets all log writers that have been registered using <see cref="Get{T}"/>, <see cref="Get(Type)"/> or <see cref="Get(string)"/>.
-	/// The index of the log writer in the list corresponds to <see cref="LogWriter.Id"/>.
-	/// </summary>
-	public static IReadOnlyList<LogWriter> KnownWriters => sLogWritersById;
+	#endregion
 
-	/// <summary>
-	/// Gets all log writer tags that have been registered using <see cref="WithTag"/> or <see cref="WithTags"/>.
-	/// The index of the log writer tag in the list corresponds to <see cref="LogWriterTag.Id"/>.
-	/// </summary>
-	public static IReadOnlyList<LogWriterTag> KnownTags => sLogWriterTagsById;
-
-	/// <summary>
-	/// Converts a <see cref="LogWriter"/> to its name.
-	/// </summary>
-	/// <param name="writer">Log writer to convert.</param>
-	public static implicit operator string(LogWriter writer)
-	{
-		return writer.Name;
-	}
-
-	/// <summary>
-	/// Gets the current timestamp as used by the logging subsystem.
-	/// </summary>
-	/// <returns>The current timestamp.</returns>
-	public static DateTimeOffset GetTimestamp()
-	{
-		return DateTimeOffset.Now;
-	}
-
-	/// <summary>
-	/// Gets the current high precision timestamp as used by the logging subsystem (in ns).
-	/// </summary>
-	/// <returns>The current high precision timestamp.</returns>
-	public static long GetHighPrecisionTimestamp()
-	{
-		return (long)((decimal)Stopwatch.GetTimestamp() * 1000000000L / Stopwatch.Frequency); // in ns
-	}
+	#region Properties
 
 	/// <summary>
 	/// Gets the id of the log writer.
@@ -143,21 +78,39 @@ public sealed class LogWriter
 	/// </summary>
 	public string Name { get; }
 
-	/// <summary>
-	/// Gets the tags the log writer attaches to a written message.
-	/// </summary>
-	public LogWriterTagSet Tags { get; }
+	#endregion
+
+	#region Operators
 
 	/// <summary>
-	/// Gets the primary log writer
-	/// (the initial log writer with the same name that does not modify messages when writing them).
+	/// Converts a <see cref="LogWriter"/> to its name.
 	/// </summary>
-	public LogWriter PrimaryWriter { get; }
+	/// <param name="writer">Log writer to convert.</param>
+	public static implicit operator string(LogWriter writer)
+	{
+		return writer.Name;
+	}
+
+	#endregion
+
+	#region Primary Log Writer / No Tagging
+
+	private static          int                           sNextId;
+	private static          List<LogWriter>               sLogWritersById                  = [];
+	private static          Dictionary<string, LogWriter> sLogWritersByName                = new();
+	private static readonly Regex                         sExtractGenericArgumentTypeRegex = new("^([^`]+)`\\d+$", RegexOptions.Compiled);
 
 	/// <summary>
-	/// Gets or sets the bit mask indicating which log levels are active for the log writer.
+	/// Gets all log writers that have been registered using <see cref="Get{T}"/>, <see cref="Get(Type)"/> or <see cref="Get(string)"/>.
+	/// The index of the log writer in the list corresponds to <see cref="LogWriter.Id"/>.
 	/// </summary>
-	internal LogLevelBitMask ActiveLogLevelMask { get; set; }
+	public static IReadOnlyList<LogWriter> KnownWriters => sLogWritersById;
+
+	/// <summary>
+	/// Occurs when a new log writer is registered.
+	/// The global logging lock (<see cref="LogGlobals.Sync"/>) is acquired when raising the event.
+	/// </summary>
+	public static event LogWriterRegisteredEventHandler? NewLogWriterRegistered;
 
 	/// <summary>
 	/// Gets a log writer with the specified name that can be used to write to the log.
@@ -276,105 +229,47 @@ public sealed class LogWriter
 	}
 
 	/// <summary>
-	/// Gets a log writer tag with the specified name (for internal use only).
+	/// Raises the <see cref="NewLogWriterRegistered"/> event.
+	/// The global logging lock (<see cref="LogGlobals.Sync"/>) must be acquired when raising the event.
 	/// </summary>
-	/// <param name="name">Name of the log writer to get.</param>
-	/// <returns>The requested log writer.</returns>
-	internal static LogWriterTag GetTag(string name)
+	/// <param name="writer">The new log writer.</param>
+	private static void OnNewLogWriterRegistered(LogWriter writer)
 	{
-		sLogWriterTagsByName.TryGetValue(name, out LogWriterTag? tag);
-		if (tag != null) return tag;
-
-		lock (LogGlobals.Sync)
-		{
-			if (sLogWriterTagsByName.TryGetValue(name, out tag))
-				return tag;
-
-			tag = new LogWriterTag(name);
-
-			// the id of the writer tag should correspond to the index in the list and the
-			// number of elements in the dictionary.
-			Debug.Assert(tag.Id == sLogWriterTagsById.Count);
-			Debug.Assert(tag.Id == sLogWriterTagsByName.Count);
-
-			// replace log writer tag list
-			var newLogWriterTagsById = new List<LogWriterTag>(sLogWriterTagsById) { tag };
-			Thread.MemoryBarrier(); // ensures everything has been actually written to memory at this point
-			sLogWriterTagsById = newLogWriterTagsById;
-
-			// replace log writer tag collection dictionary
-			var newLogWriterTagsByName = new Dictionary<string, LogWriterTag>(sLogWriterTagsByName) { { tag.Name, tag } };
-			Thread.MemoryBarrier(); // ensures everything has been actually written to memory at this point
-			sLogWriterTagsByName = newLogWriterTagsByName;
-
-			// notify about the new log writer tag
-			OnNewLogWriterTagRegistered(tag);
-		}
-
-		return tag;
+		Debug.Assert(Monitor.IsEntered(LogGlobals.Sync));
+		LogWriterRegisteredEventHandler? handler = NewLogWriterRegistered;
+		handler?.Invoke(writer);
 	}
+
+	#endregion
+
+	#region Secondary Log Writer / Tagging
+
+	private static   List<LogWriterTag>               sLogWriterTagsById   = [];
+	private static   Dictionary<string, LogWriterTag> sLogWriterTagsByName = new();
+	private readonly List<WeakReference<LogWriter>>?  mSecondaryWriters;
 
 	/// <summary>
-	/// Updates the active log level mask of all log writers according to the specified configuration.<br/>
-	/// This directly influences source filtering in the log writer.<br/>
-	/// Do not call this method when using Griffin+ Logging as it takes care of configuring log writers!
+	/// Occurs when a new log writer tag is registered.
+	/// The global logging lock (<see cref="LogGlobals.Sync"/>) is acquired when raising the event.
 	/// </summary>
-	/// <param name="configuration">The log writer Configuration to use.</param>
-	/// <returns>
-	/// The old log writer configuration (may be <see langword="null"/>).
-	/// </returns>
-	/// <exception cref="NullReferenceException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
-	public static ILogWriterConfiguration? UpdateLogWriters(ILogWriterConfiguration configuration)
-	{
-		if (configuration == null) throw new ArgumentNullException(nameof(configuration));
-
-		lock (LogGlobals.Sync)
-		{
-			ILogWriterConfiguration? oldConfiguration = sLogWriterConfiguration;
-			sLogWriterConfiguration = configuration;
-			foreach (LogWriter writer in sLogWritersById) writer.Update(configuration);
-			return oldConfiguration;
-		}
-	}
+	public static event LogWriterTagRegisteredEventHandler? NewLogWriterTagRegistered;
 
 	/// <summary>
-	/// Checks whether the specified string is a valid log writer name
-	/// (log writer names may consist of all characters except line separators).
+	/// Gets all log writer tags that have been registered using <see cref="WithTag"/> or <see cref="WithTags"/>.
+	/// The index of the log writer tag in the list corresponds to <see cref="LogWriterTag.Id"/>.
 	/// </summary>
-	/// <param name="name">Name to check.</param>
-	/// <exception cref="ArgumentNullException">The specified name is <see langword="null"/>.</exception>
-	/// <exception cref="ArgumentException">The specified name is invalid.</exception>
-	public static void CheckName(string name)
-	{
-		if (name == null) throw new ArgumentNullException(nameof(name));
-
-		if (string.IsNullOrWhiteSpace(name))
-			throw new ArgumentException("The specified name consists of whitespace characters only and is therefore not a valid log writer name.");
-
-		if (name.IndexOfAny(sLineSeparators) < 0)
-			return;
-
-		string message =
-			$"The specified name ({name}) is not a valid log writer name.\n" +
-			"Valid names may consist of all characters except line separators.\n";
-		throw new ArgumentException(message);
-	}
+	public static IReadOnlyList<LogWriterTag> KnownTags => sLogWriterTagsById;
 
 	/// <summary>
-	/// Checks whether the specified log level is active, so a message written using that level
-	/// really gets into the log. The special log levels <see cref="LogLevel.None"/> and <see cref="LogLevel.All"/>
-	/// are always active, but must not be used write log messages. These log levels are mapped to
-	/// <see cref="LogLevel.Error"/> and get always logged - regardless of the configuration.
+	/// Gets the primary log writer
+	/// (the initial log writer with the same name that does not modify messages when writing them).
 	/// </summary>
-	/// <param name="level">Log level to check.</param>
-	/// <returns>
-	/// <see langword="true"/>, if the specified log level is active;<br/>
-	/// otherwise, <see langword="false"/>.
-	/// </returns>
-	public bool IsLogLevelActive(LogLevel level)
-	{
-		return level.Id is < 0 or int.MaxValue || ActiveLogLevelMask.IsBitSet(level.Id);
-	}
+	public LogWriter PrimaryWriter { get; }
+
+	/// <summary>
+	/// Gets the tags the log writer attaches to a written message.
+	/// </summary>
+	public LogWriterTagSet Tags { get; }
 
 	/// <summary>
 	/// Creates a new log writer that attaches the specified tag to written log messages.
@@ -437,6 +332,124 @@ public sealed class LogWriter
 	}
 
 	/// <summary>
+	/// Gets a log writer tag with the specified name (for internal use only).
+	/// </summary>
+	/// <param name="name">Name of the log writer to get.</param>
+	/// <returns>The requested log writer.</returns>
+	internal static LogWriterTag GetTag(string name)
+	{
+		sLogWriterTagsByName.TryGetValue(name, out LogWriterTag? tag);
+		if (tag != null) return tag;
+
+		lock (LogGlobals.Sync)
+		{
+			if (sLogWriterTagsByName.TryGetValue(name, out tag))
+				return tag;
+
+			tag = new LogWriterTag(name);
+
+			// the id of the writer tag should correspond to the index in the list and the
+			// number of elements in the dictionary.
+			Debug.Assert(tag.Id == sLogWriterTagsById.Count);
+			Debug.Assert(tag.Id == sLogWriterTagsByName.Count);
+
+			// replace log writer tag list
+			var newLogWriterTagsById = new List<LogWriterTag>(sLogWriterTagsById) { tag };
+			Thread.MemoryBarrier(); // ensures everything has been actually written to memory at this point
+			sLogWriterTagsById = newLogWriterTagsById;
+
+			// replace log writer tag collection dictionary
+			var newLogWriterTagsByName = new Dictionary<string, LogWriterTag>(sLogWriterTagsByName) { { tag.Name, tag } };
+			Thread.MemoryBarrier(); // ensures everything has been actually written to memory at this point
+			sLogWriterTagsByName = newLogWriterTagsByName;
+
+			// notify about the new log writer tag
+			OnNewLogWriterTagRegistered(tag);
+		}
+
+		return tag;
+	}
+
+	/// <summary>
+	/// Removes secondary log writers that have been collected meanwhile.
+	/// </summary>
+	private void RemoveCollectedSecondaryWriters()
+	{
+		if (mSecondaryWriters == null)
+			return;
+
+		for (int i = mSecondaryWriters.Count - 1; i >= 0; i--)
+		{
+			if (!mSecondaryWriters[i].TryGetTarget(out LogWriter? _))
+			{
+				mSecondaryWriters.RemoveAt(i);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Raises the <see cref="NewLogWriterTagRegistered"/> event.
+	/// The global logging lock (<see cref="LogGlobals.Sync"/>) must be acquired when raising the event.
+	/// </summary>
+	/// <param name="tag">The new log writer tag.</param>
+	private static void OnNewLogWriterTagRegistered(LogWriterTag tag)
+	{
+		Debug.Assert(Monitor.IsEntered(LogGlobals.Sync));
+		LogWriterTagRegisteredEventHandler? handler = NewLogWriterTagRegistered;
+		handler?.Invoke(tag);
+	}
+
+	#endregion
+
+	#region Configuration
+
+	private static ILogWriterConfiguration? sLogWriterConfiguration = null;
+
+	/// <summary>
+	/// Gets or sets the bit mask indicating which log levels are active for the log writer.
+	/// </summary>
+	internal LogLevelBitMask ActiveLogLevelMask { get; set; }
+
+	/// <summary>
+	/// Checks whether the specified log level is active, so a message written using that level
+	/// really gets into the log. The special log levels <see cref="LogLevel.None"/> and <see cref="LogLevel.All"/>
+	/// are always active, but must not be used write log messages. These log levels are mapped to
+	/// <see cref="LogLevel.Error"/> and get always logged - regardless of the configuration.
+	/// </summary>
+	/// <param name="level">Log level to check.</param>
+	/// <returns>
+	/// <see langword="true"/>, if the specified log level is active;<br/>
+	/// otherwise, <see langword="false"/>.
+	/// </returns>
+	public bool IsLogLevelActive(LogLevel level)
+	{
+		return level.Id is < 0 or int.MaxValue || ActiveLogLevelMask.IsBitSet(level.Id);
+	}
+
+	/// <summary>
+	/// Updates the active log level mask of all log writers according to the specified configuration.<br/>
+	/// This directly influences source filtering in the log writer.<br/>
+	/// Do not call this method when using Griffin+ Logging as it takes care of configuring log writers!
+	/// </summary>
+	/// <param name="configuration">The log writer Configuration to use.</param>
+	/// <returns>
+	/// The old log writer configuration (may be <see langword="null"/>).
+	/// </returns>
+	/// <exception cref="NullReferenceException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+	public static ILogWriterConfiguration? UpdateLogWriters(ILogWriterConfiguration configuration)
+	{
+		if (configuration == null) throw new ArgumentNullException(nameof(configuration));
+
+		lock (LogGlobals.Sync)
+		{
+			ILogWriterConfiguration? oldConfiguration = sLogWriterConfiguration;
+			sLogWriterConfiguration = configuration;
+			foreach (LogWriter writer in sLogWritersById) writer.Update(configuration);
+			return oldConfiguration;
+		}
+	}
+
+	/// <summary>
 	/// Updates the log writer and associated secondary log writers.
 	/// </summary>
 	/// <param name="configuration">The log configuration.</param>
@@ -463,22 +476,94 @@ public sealed class LogWriter
 		}
 	}
 
-	/// <summary>
-	/// Removes secondary log writers that have been collected meanwhile.
-	/// </summary>
-	private void RemoveCollectedSecondaryWriters()
-	{
-		if (mSecondaryWriters == null)
-			return;
+	#endregion
 
-		for (int i = mSecondaryWriters.Count - 1; i >= 0; i--)
+	#region Timestamps
+
+	/// <summary>
+	/// Gets the current timestamp as used by the logging subsystem.
+	/// </summary>
+	/// <returns>The current timestamp.</returns>
+	public static DateTimeOffset GetTimestamp()
+	{
+		return DateTimeOffset.Now;
+	}
+
+	/// <summary>
+	/// Gets the current high precision timestamp as used by the logging subsystem (in ns).
+	/// </summary>
+	/// <returns>The current high precision timestamp.</returns>
+	public static long GetHighPrecisionTimestamp()
+	{
+		return (long)((decimal)Stopwatch.GetTimestamp() * 1000000000L / Stopwatch.Frequency); // in ns
+	}
+
+	#endregion
+
+	#region Formatting Profile
+
+	private static PrettyOptions  sDefaultPrettyProfile = PrettyPresets.Standard;
+	private        PrettyOptions? mPrettyProfile        = null;
+
+	/// <summary>
+	/// Gets or sets the formatting profile used to configure the appearance of log messages.<br/>
+	/// The default is <see cref="PrettyPresets.Standard"/>.<br/>
+	/// NOTE: This property affects all log writers!
+	/// </summary>
+	/// <exception cref="ArgumentNullException">
+	/// <see cref="PrettyOptions"/> instance is <see langword="null"/>.
+	/// </exception>
+	/// <remarks>
+	/// When setting this property, the provided <see cref="PrettyOptions"/> instance is cloned
+	/// and frozen  to ensure thread safety and immutability.
+	/// </remarks>
+	public static PrettyOptions DefaultFormattingProfile
+	{
+		get => Volatile.Read(ref sDefaultPrettyProfile);
+		set
 		{
-			if (!mSecondaryWriters[i].TryGetTarget(out LogWriter? _))
-			{
-				mSecondaryWriters.RemoveAt(i);
-			}
+			if (value is null) throw new ArgumentNullException(nameof(value));
+			PrettyOptions profile = value.Clone().Freeze();
+			Volatile.Write(ref sDefaultPrettyProfile, profile);
 		}
 	}
+
+	/// <summary>
+	/// Gets or sets the formatting profile used to configure pretty-printing options.<br/>
+	/// If <see langword="null"/>, the <see cref="DefaultFormattingProfile"/> is used.<br/>
+	/// </summary>
+	/// <remarks>
+	/// Assigning a new value to this property ensures that the provided profile is immutable
+	/// by cloning and freezing it. This guarantees thread safety when accessing the profile.
+	/// </remarks>
+	public PrettyOptions? FormattingProfile
+	{
+		get => Volatile.Read(ref mPrettyProfile);
+		set
+		{
+			PrettyOptions? profile = value?.Clone().Freeze();
+			Volatile.Write(ref mPrettyProfile, profile);
+		}
+	}
+
+	/// <summary>
+	/// Gets the effective profile to use for rendering (never <see langword="null"/>).
+	/// Falls back to <see cref="DefaultFormattingProfile"/> when no instance profile is set.
+	/// </summary>
+	public PrettyOptions EffectiveFormattingProfile => Volatile.Read(ref mPrettyProfile) ?? Volatile.Read(ref sDefaultPrettyProfile);
+
+	#endregion
+
+	#region Writing Messages
+
+	private static readonly IFormatProvider            sDefaultFormatProvider = CultureInfo.InvariantCulture;
+	private static readonly ThreadLocal<StringBuilder> sBuilder               = new(() => new StringBuilder());
+
+	/// <summary>
+	/// Occurs when a log writer writes a log message.
+	/// The global logging lock (<see cref="LogGlobals.Sync"/>) is not acquired when raising the event.
+	/// </summary>
+	public static event LogMessageWrittenEventHandler? LogMessageWritten;
 
 	/// <summary>
 	/// Writes a message to the log.
@@ -1982,17 +2067,17 @@ public sealed class LogWriter
 	/// <param name="arg">Argument to prepare.</param>
 	/// <returns>Object to feed into the logging subsystem.</returns>
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private static object? PrepareArgument<T>(T arg)
+	private object? PrepareArgument<T>(T arg)
 	{
-		if (arg is Type type) return PrettyFormatter.Format(type, sPrettyProfile);
-		if (arg is Type[] types) return PrettyFormatter.Format(types, sPrettyProfile);
-		if (arg is IEnumerable<Type> typeSequence) return PrettyFormatter.Format(typeSequence, sPrettyProfile);
-		if (arg is ParameterInfo parameterInfo) return PrettyFormatter.Format(parameterInfo, sPrettyProfile);
-		if (arg is MemberInfo memberInfo) return PrettyFormatter.Format(memberInfo, sPrettyProfile);
-		if (arg is Exception exception) return PrettyFormatter.Format(exception, sPrettyProfile);
-		if (arg is Assembly assembly) return PrettyFormatter.Format(assembly, sPrettyProfile);
-		if (arg is AssemblyName assemblyName) return PrettyFormatter.Format(assemblyName, sPrettyProfile);
-		if (arg is Module module) return PrettyFormatter.Format(module, sPrettyProfile);
+		if (arg is Type type) return PrettyFormatter.Format(type, EffectiveFormattingProfile);
+		if (arg is Type[] types) return PrettyFormatter.Format(types, EffectiveFormattingProfile);
+		if (arg is IEnumerable<Type> typeSequence) return PrettyFormatter.Format(typeSequence, EffectiveFormattingProfile);
+		if (arg is ParameterInfo parameterInfo) return PrettyFormatter.Format(parameterInfo, EffectiveFormattingProfile);
+		if (arg is MemberInfo memberInfo) return PrettyFormatter.Format(memberInfo, EffectiveFormattingProfile);
+		if (arg is Exception exception) return PrettyFormatter.Format(exception, EffectiveFormattingProfile);
+		if (arg is Assembly assembly) return PrettyFormatter.Format(assembly, EffectiveFormattingProfile);
+		if (arg is AssemblyName assemblyName) return PrettyFormatter.Format(assemblyName, EffectiveFormattingProfile);
+		if (arg is Module module) return PrettyFormatter.Format(module, EffectiveFormattingProfile);
 		return arg;
 	}
 
@@ -2012,7 +2097,7 @@ public sealed class LogWriter
 	/// <see cref="AssemblyName"/>, or <see cref="Module"/>. Elements of these types will be replaced with their
 	/// formatted string representations.
 	/// </param>
-	private static void PrettyFormatArguments(ref object[] args)
+	private void PrettyFormatArguments(ref object[] args)
 	{
 		bool cloned = false;
 		for (int i = 0; i < args.Length; i++)
@@ -2021,47 +2106,47 @@ public sealed class LogWriter
 			if (obj is Type type)
 			{
 				EnsureCloned(ref cloned, ref args);
-				args[i] = PrettyFormatter.Format(type, sPrettyProfile);
+				args[i] = PrettyFormatter.Format(type, EffectiveFormattingProfile);
 			}
 			else if (obj is Type[] types)
 			{
 				EnsureCloned(ref cloned, ref args);
-				args[i] = PrettyFormatter.Format(types, sPrettyProfile);
+				args[i] = PrettyFormatter.Format(types, EffectiveFormattingProfile);
 			}
 			else if (obj is IEnumerable<Type> typeSequence)
 			{
 				EnsureCloned(ref cloned, ref args);
-				args[i] = PrettyFormatter.Format(typeSequence, sPrettyProfile);
+				args[i] = PrettyFormatter.Format(typeSequence, EffectiveFormattingProfile);
 			}
 			else if (args[i] is ParameterInfo parameterInfo)
 			{
 				EnsureCloned(ref cloned, ref args);
-				args[i] = PrettyFormatter.Format(parameterInfo, sPrettyProfile, null);
+				args[i] = PrettyFormatter.Format(parameterInfo, EffectiveFormattingProfile, null);
 			}
 			else if (obj is MemberInfo memberInfo)
 			{
 				EnsureCloned(ref cloned, ref args);
-				args[i] = PrettyFormatter.Format(memberInfo, sPrettyProfile);
+				args[i] = PrettyFormatter.Format(memberInfo, EffectiveFormattingProfile);
 			}
 			else if (obj is Exception exception)
 			{
 				EnsureCloned(ref cloned, ref args);
-				args[i] = PrettyFormatter.Format(exception, sPrettyProfile);
+				args[i] = PrettyFormatter.Format(exception, EffectiveFormattingProfile);
 			}
 			else if (obj is Assembly assembly)
 			{
 				EnsureCloned(ref cloned, ref args);
-				args[i] = PrettyFormatter.Format(assembly, sPrettyProfile);
+				args[i] = PrettyFormatter.Format(assembly, EffectiveFormattingProfile);
 			}
 			else if (obj is AssemblyName assemblyName)
 			{
 				EnsureCloned(ref cloned, ref args);
-				args[i] = PrettyFormatter.Format(assemblyName, sPrettyProfile);
+				args[i] = PrettyFormatter.Format(assemblyName, EffectiveFormattingProfile);
 			}
 			else if (obj is Module module)
 			{
 				EnsureCloned(ref cloned, ref args);
-				args[i] = PrettyFormatter.Format(module, sPrettyProfile);
+				args[i] = PrettyFormatter.Format(module, EffectiveFormattingProfile);
 			}
 		}
 		return;
@@ -2073,6 +2158,50 @@ public sealed class LogWriter
 			args = (object[])args.Clone();
 			cloned = true;
 		}
+	}
+
+	/// <summary>
+	/// Raises the <see cref="LogMessageWritten"/> event.
+	/// The global logging lock (<see cref="LogGlobals.Sync"/>) must _not_ be acquired when raising the event.
+	/// </summary>
+	/// <param name="writer">The log writer that writes the message.</param>
+	/// <param name="level">The log level that is associated with the message.</param>
+	/// <param name="message">The message text.</param>
+	private static void OnLogMessageWritten(LogWriter writer, LogLevel level, string message)
+	{
+		Debug.Assert(!Monitor.IsEntered(LogGlobals.Sync));
+		LogMessageWrittenEventHandler? handler = LogMessageWritten;
+		handler?.Invoke(writer, level, message);
+	}
+
+	#endregion
+
+	#region Utilities
+
+	private static readonly string[] sNewlineTokens  = ["\r\n", "\r", "\n"];
+	private static readonly char[]   sLineSeparators = Unicode.NewLineCharacters.ToCharArray();
+
+	/// <summary>
+	/// Checks whether the specified string is a valid log writer name
+	/// (log writer names may consist of all characters except line separators).
+	/// </summary>
+	/// <param name="name">Name to check.</param>
+	/// <exception cref="ArgumentNullException">The specified name is <see langword="null"/>.</exception>
+	/// <exception cref="ArgumentException">The specified name is invalid.</exception>
+	public static void CheckName(string name)
+	{
+		if (name == null) throw new ArgumentNullException(nameof(name));
+
+		if (string.IsNullOrWhiteSpace(name))
+			throw new ArgumentException("The specified name consists of whitespace characters only and is therefore not a valid log writer name.");
+
+		if (name.IndexOfAny(sLineSeparators) < 0)
+			return;
+
+		string message =
+			$"The specified name ({name}) is not a valid log writer name.\n" +
+			"Valid names may consist of all characters except line separators.\n";
+		throw new ArgumentException(message);
 	}
 
 	/// <summary>
@@ -2157,6 +2286,10 @@ public sealed class LogWriter
 		}
 	}
 
+	#endregion
+
+	#region ToString()
+
 	/// <summary>
 	/// Gets the string representation of the log writer.
 	/// </summary>
@@ -2166,41 +2299,5 @@ public sealed class LogWriter
 		return $"{Name} ({Id})";
 	}
 
-	/// <summary>
-	/// Raises the <see cref="NewLogWriterRegistered"/> event.
-	/// The global logging lock (<see cref="LogGlobals.Sync"/>) must be acquired when raising the event.
-	/// </summary>
-	/// <param name="writer">The new log writer.</param>
-	private static void OnNewLogWriterRegistered(LogWriter writer)
-	{
-		Debug.Assert(Monitor.IsEntered(LogGlobals.Sync));
-		LogWriterRegisteredEventHandler? handler = NewLogWriterRegistered;
-		handler?.Invoke(writer);
-	}
-
-	/// <summary>
-	/// Raises the <see cref="NewLogWriterTagRegistered"/> event.
-	/// The global logging lock (<see cref="LogGlobals.Sync"/>) must be acquired when raising the event.
-	/// </summary>
-	/// <param name="tag">The new log writer tag.</param>
-	private static void OnNewLogWriterTagRegistered(LogWriterTag tag)
-	{
-		Debug.Assert(Monitor.IsEntered(LogGlobals.Sync));
-		LogWriterTagRegisteredEventHandler? handler = NewLogWriterTagRegistered;
-		handler?.Invoke(tag);
-	}
-
-	/// <summary>
-	/// Raises the <see cref="LogMessageWritten"/> event.
-	/// The global logging lock (<see cref="LogGlobals.Sync"/>) must _not_ be acquired when raising the event.
-	/// </summary>
-	/// <param name="writer">The log writer that writes the message.</param>
-	/// <param name="level">The log level that is associated with the message.</param>
-	/// <param name="message">The message text.</param>
-	private static void OnLogMessageWritten(LogWriter writer, LogLevel level, string message)
-	{
-		Debug.Assert(!Monitor.IsEntered(LogGlobals.Sync));
-		LogMessageWrittenEventHandler? handler = LogMessageWritten;
-		handler?.Invoke(writer, level, message);
-	}
+	#endregion
 }
